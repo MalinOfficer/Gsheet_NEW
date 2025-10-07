@@ -1,9 +1,17 @@
+<<<<<<< HEAD
+=======
+
+>>>>>>> 87b9b2c7dc9455649ded2497aa6580eb7cb6fe12
 {
   "name": "nextn",
   "version": "0.1.0",
   "private": true,
   "scripts": {
+<<<<<<< HEAD
     "dev": "next dev",
+=======
+    "dev": "next dev --turbopack",
+>>>>>>> 87b9b2c7dc9455649ded2497aa6580eb7cb6fe12
     "genkit:dev": "genkit start -- tsx src/ai/dev.ts",
     "genkit:watch": "genkit start -- tsx --watch src/ai/dev.ts",
     "build": "next build",
@@ -23,7 +31,10 @@
     "@radix-ui/react-dropdown-menu": "^2.1.6",
     "@radix-ui/react-label": "^2.1.2",
     "@radix-ui/react-menubar": "^1.1.6",
+<<<<<<< HEAD
     "@radix-ui/react-navigation-menu": "^1.2.0",
+=======
+>>>>>>> 87b9b2c7dc9455649ded2497aa6580eb7cb6fe12
     "@radix-ui/react-popover": "^1.1.6",
     "@radix-ui/react-progress": "^1.1.2",
     "@radix-ui/react-radio-group": "^1.2.3",
@@ -65,10 +76,17 @@
     "@types/node": "^20",
     "@types/react": "^18",
     "@types/react-dom": "^18",
+<<<<<<< HEAD
     "autoprefixer": "^10.4.19",
+=======
+>>>>>>> 87b9b2c7dc9455649ded2497aa6580eb7cb6fe12
     "genkit-cli": "^1.14.1",
     "postcss": "^8",
     "tailwindcss": "^3.4.1",
     "typescript": "^5"
   }
+<<<<<<< HEAD
 }
+=======
+}
+>>>>>>> 87b9b2c7dc9455649ded2497aa6580eb7cb6fe12
