@@ -1,4 +1,3 @@
-<<<<<<< HEAD
 import type { Config } from 'tailwindcss';
 
 const config: Config = {
@@ -8,17 +7,6 @@ const config: Config = {
     './src/components/**/*.{js,ts,jsx,tsx,mdx}',
   ],
   prefix: "",
-=======
-
-import type {Config} from 'tailwindcss';
-
-export default {
-  darkMode: ['class'],
-  content: [
-    './src/components/**/*.{js,ts,jsx,tsx,mdx}',
-    './src/app/**/*.{js,ts,jsx,tsx,mdx}',
-  ],
->>>>>>> 87b9b2c7dc9455649ded2497aa6580eb7cb6fe12
   theme: {
     extend: {
       fontFamily: {
@@ -98,10 +86,6 @@ export default {
     },
   },
   plugins: [require('tailwindcss-animate')],
-<<<<<<< HEAD
 };
 
 export default config;
-=======
-} satisfies Config;
->>>>>>> 87b9b2c7dc9455649ded2497aa6580eb7cb6fe12

@@ -9,10 +9,7 @@ import { cn } from "@/lib/utils";
 import { Button } from "./ui/button";
 import { Input } from "./ui/input";
 import { PlusCircle, Wand2, Download, Undo2, Redo2, Trash2, Files } from "lucide-react";
-<<<<<<< HEAD
 import { Skeleton } from "@/components/ui/skeleton";
-=======
->>>>>>> 87b9b2c7dc9455649ded2497aa6580eb7cb6fe12
 import {
   AlertDialog,
   AlertDialogAction,
@@ -121,15 +118,12 @@ export function MigrasiMurid() {
     const [history, setHistory] = useState<MuridData[][]>([rows]);
     const [historyIndex, setHistoryIndex] = useState(0);
 
-<<<<<<< HEAD
     const [isClient, setIsClient] = useState(false);
 
     useEffect(() => {
         setIsClient(true);
     }, []);
 
-=======
->>>>>>> 87b9b2c7dc9455649ded2497aa6580eb7cb6fe12
     const recordHistory = (newRows: MuridData[]) => {
         const newHistory = history.slice(0, historyIndex + 1);
         setHistory([...newHistory, newRows]);
@@ -315,11 +309,7 @@ export function MigrasiMurid() {
                 break;
             case "Delete":
             case "Backspace":
-<<<<<<< HEAD
                 if (selectedRange.start && (selectedRange.start.row !== (selectedRange.end?.row ?? selectedRange.start.row) || selectedRange.start.col !== (selectedRange.end?.col ?? selectedRange.start.col))) {
-=======
-                if (selectedRange.start) {
->>>>>>> 87b9b2c7dc9455649ded2497aa6580eb7cb6fe12
                     e.preventDefault();
                     handleClearSelectedCells();
                 }
@@ -349,11 +339,7 @@ export function MigrasiMurid() {
         isSelecting.current = false;
     };
 
-<<<<<<< HEAD
     const handlePaste = useCallback((event: React.ClipboardEvent<HTMLTableElement>) => {
-=======
-    const handlePaste = useCallback((event: React.ClipboardEvent<HTMLDivElement>) => {
->>>>>>> 87b9b2c7dc9455649ded2497aa6580eb7cb6fe12
         event.preventDefault();
         const startCell = selectedRange.start;
         if (!startCell) {
@@ -521,7 +507,6 @@ export function MigrasiMurid() {
         toast({ title: "Table Cleared", description: "All data has been cleared from the table." });
     };
 
-<<<<<<< HEAD
     if (!isClient) {
         return (
              <div className="flex-1 bg-background text-foreground p-4 sm:p-6 md:p-8">
@@ -549,17 +534,6 @@ export function MigrasiMurid() {
     return (
         <div className="flex-1 bg-background text-foreground p-4 sm:p-6 md:p-8">
             <div className="max-w-7xl mx-auto">
-=======
-    return (
-        <div className="flex-1 bg-background text-foreground p-4 sm:p-6 md:p-8">
-            <div className="max-w-7xl mx-auto space-y-6">
-                <header>
-                    <h1 className="text-2xl font-bold tracking-tight text-foreground font-headline">Migrasi Murid</h1>
-                    <p className="text-sm text-muted-foreground mt-1">
-                       Click and drag to select a range. Use arrow keys to navigate. Press Delete to clear selected cells. Paste data from your spreadsheet.
-                    </p>
-                </header>
->>>>>>> 87b9b2c7dc9455649ded2497aa6580eb7cb6fe12
                 <Card className="shadow-lg">
                     <CardHeader>
                         <div>
@@ -579,11 +553,7 @@ export function MigrasiMurid() {
                         <AlertDialog>
                           <AlertDialogTrigger asChild>
                             <Button size="sm" variant="destructive">
-<<<<<<< HEAD
                                 <Trash2 className="mr-2 h-4 w-4" /> Delete All
-=======
-                                <Trash2 className="mr-2 h-4 w-4" /> Delete
->>>>>>> 87b9b2c7dc9455649ded2497aa6580eb7cb6fe12
                             </Button>
                           </AlertDialogTrigger>
                           <AlertDialogContent>
@@ -611,7 +581,6 @@ export function MigrasiMurid() {
                     <CardContent className="pt-6">
                         <div 
                             className="relative w-full overflow-auto rounded-md border max-h-[600px]"
-<<<<<<< HEAD
                             onMouseUp={handleMouseUp}
                             onMouseLeave={handleMouseUp}
                         >
@@ -620,13 +589,6 @@ export function MigrasiMurid() {
                                 style={{ tableLayout: 'fixed' }}
                                 onPaste={handlePaste}
                             >
-=======
-                            onPaste={handlePaste}
-                            onMouseUp={handleMouseUp}
-                            onMouseLeave={handleMouseUp}
-                        >
-                            <Table className="border-collapse w-full" style={{ tableLayout: 'fixed' }}>
->>>>>>> 87b9b2c7dc9455649ded2497aa6580eb7cb6fe12
                                 <TableHeader className="sticky top-0 z-10 bg-card">
                                     <TableRow>
                                         {tableHeaders.map((header) => (

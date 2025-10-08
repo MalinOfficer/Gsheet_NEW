@@ -6,10 +6,7 @@ import { StoreProvider } from "@/store/store-provider";
 import { ClientLayout } from "@/components/layout/client-layout";
 import Script from "next/script";
 import { ThemeProvider } from "@/hooks/theme-provider";
-<<<<<<< HEAD
 import { NavigationMenu, NavigationMenuList, NavigationMenuItem, NavigationMenuLink, navigationMenuTriggerStyle } from "@/components/ui/navigation-menu";
-=======
->>>>>>> 87b9b2c7dc9455649ded2497aa6580eb7cb6fe12
 
 
 export const metadata: Metadata = {
