@@ -26,7 +26,6 @@ const projectFilesForAction = [
   "src/app/migrasi-murid/page.tsx",
   "src/app/cek-duplikasi/page.tsx",
   "src/app/data-weaver/page.tsx",
-  "src/app/data-normalisasi/page.tsx",
   "src/app/settings/page.tsx",
   "src/app/code-viewer/page.tsx",
 
@@ -62,34 +61,34 @@ const projectFilesForAction = [
   // Komponen UI (ShadCN)
   "src/components/ui/accordion.tsx",
   "src/components/ui/alert-dialog.tsx",
-  "src/components/ui/alert.tsx",
-  "src/components/ui/avatar.tsx",
-  "src/components/ui/badge.tsx",
-  "src/components/ui/button.tsx",
-  "src/components/ui/calendar.tsx",
-  "src/components/ui/card.tsx",
-  "src/components/ui/carousel.tsx",
-  "src/components/ui/chart.tsx",
-  "src/components/ui/checkbox.tsx",
-  "src/components/ui/collapsible.tsx",
-  "src/components/ui/command.tsx",
-  "src/components/ui/dialog.tsx",
-  "src/components/ui/dropdown-menu.tsx",
-  "src/components/ui/form.tsx",
-  "src/components/ui/input.tsx",
-  "src/components/ui/label.tsx",
-  "src/components/ui/menubar.tsx",
-  "src/components/ui/multi-select.tsx",
-  "src/components/ui/navigation-menu.tsx",
-  "src/components/ui/popover.tsx",
-  "src/components/ui/progress.tsx",
-  "src/components/ui/radio-group.tsx",
-  "src/components/ui/scroll-area.tsx",
-  "src/components/ui/select.tsx",
-  "src/components/ui/separator.tsx",
-  "src/components/ui/sheet.tsx",
-  "src/components/ui/skeleton.tsx",
-  "src/components/ui/slider.tsx",
+  "src_components/ui/alert.tsx",
+  "src_components/ui/avatar.tsx",
+  "src_components/ui/badge.tsx",
+  "src_components/ui/button.tsx",
+  "src_components/ui/calendar.tsx",
+  "src_components/ui/card.tsx",
+  "src_components/ui/carousel.tsx",
+  "src_components/ui/chart.tsx",
+  "src_components/ui/checkbox.tsx",
+  "src_components/ui/collapsible.tsx",
+  "src_components/ui/command.tsx",
+  "src_components/ui/dialog.tsx",
+  "src_components/ui/dropdown-menu.tsx",
+  "src_components/ui/form.tsx",
+  "src_components/ui/input.tsx",
+  "src_components/ui/label.tsx",
+  "src_components/ui/menubar.tsx",
+  "src_components/ui/multi-select.tsx",
+  "src_components/ui/navigation-menu.tsx",
+  "src_components/ui/popover.tsx",
+  "src_components/ui/progress.tsx",
+  "src_components/ui/radio-group.tsx",
+  "src_components/ui/scroll-area.tsx",
+  "src_components/ui/select.tsx",
+  "src_components/ui/separator.tsx",
+  "src_components/ui/sheet.tsx",
+  "src_components/ui/skeleton.tsx",
+  "src_components/ui/slider.tsx",
   "src/components/ui/switch.tsx",
   "src/components/ui/table.tsx",
   "src/components/ui/tabs.tsx",
@@ -280,10 +279,11 @@ async function getSheetRowMap(sheets: any, spreadsheetId: string, sheetName: str
     }
 
     const ticketNumberRegex = /#(\d+)/;
-    const rowMap: Record<string, { rowIndex: number, currentStatus: string; currentTicketOp: string; title: string }> = {};
+    const rowMap: Record<string, { rowIndex: number, currentStatus: string; currentTicketOp: string; title: string, currentCheckout: string; }> = {};
     sheetRows.forEach((row, index) => {
         const currentStatus = row[0] || ''; // Column G
         const detailCase = row[6]; // Column M (G is 0, so M is 6)
+        const currentCheckout = row[8] || ''; // Column O (G is 0, so O is 8)
         const currentTicketOp = row[13] || ''; // Column T (G is 0, so T is 13)
 
         if (typeof detailCase === 'string') {
@@ -295,6 +295,7 @@ async function getSheetRowMap(sheets: any, spreadsheetId: string, sheetName: str
                     currentStatus: currentStatus,
                     currentTicketOp: currentTicketOp,
                     title: detailCase,
+                    currentCheckout: currentCheckout
                 };
             }
         }
@@ -322,13 +323,19 @@ export async function getUpdatePreview(
         const sheets = getGoogleSheetsClient();
         const rowMap = await getSheetRowMap(sheets, spreadsheetId, sheetName);
         
-        const changesToPreview: { title: string, oldStatus: string, newStatus: string, oldTicketOp: string, newTicketOp: string }[] = [];
+        const changesToPreview: { 
+            title: string, 
+            oldStatus: string, newStatus: string, 
+            oldTicketOp: string, newTicketOp: string,
+            oldCheckout: string, newCheckout: string 
+        }[] = [];
         const ticketNumberRegex = /#(\d+)/;
 
         for (const appRow of data.rows) {
             const detailCase = appRow['Title'];
             const newStatus = appRow['Status'];
-            const newTicketOp = appRow['Ticket OP'];
+            const newTicketOp = appRow['Ticket OP'] || '';
+            const newCheckout = appRow['Resolved At'] || '';
 
             if (typeof detailCase === 'string') {
                 const match = detailCase.match(ticketNumberRegex);
@@ -336,14 +343,23 @@ export async function getUpdatePreview(
                     const ticketNumber = match[1];
                     const sheetRowInfo = rowMap[ticketNumber];
                     
-                    if (sheetRowInfo && (sheetRowInfo.currentStatus !== newStatus || sheetRowInfo.currentTicketOp !== newTicketOp)) {
-                        changesToPreview.push({
-                            title: sheetRowInfo.title,
-                            oldStatus: sheetRowInfo.currentStatus,
-                            newStatus: newStatus,
-                            oldTicketOp: sheetRowInfo.currentTicketOp,
-                            newTicketOp: newTicketOp,
-                        });
+                    if (sheetRowInfo) {
+                        const statusChanged = sheetRowInfo.currentStatus !== newStatus;
+                        // Only consider it a change if the new Ticket OP is not empty
+                        const ticketOpChanged = newTicketOp && sheetRowInfo.currentTicketOp !== newTicketOp;
+                        const checkoutChanged = newStatus === 'Solved' && sheetRowInfo.currentCheckout !== newCheckout;
+
+                        if (statusChanged || ticketOpChanged || checkoutChanged) {
+                             changesToPreview.push({
+                                title: sheetRowInfo.title,
+                                oldStatus: sheetRowInfo.currentStatus,
+                                newStatus: newStatus,
+                                oldTicketOp: sheetRowInfo.currentTicketOp,
+                                newTicketOp: ticketOpChanged ? newTicketOp : sheetRowInfo.currentTicketOp,
+                                oldCheckout: sheetRowInfo.currentCheckout,
+                                newCheckout: newStatus === 'Solved' ? newCheckout : sheetRowInfo.currentCheckout,
+                            });
+                        }
                     }
                 }
             }
@@ -380,14 +396,20 @@ export async function updateSheetStatus(
         const rowMap = await getSheetRowMap(sheets, spreadsheetId, sheetName);
 
         const updateRequests = [];
-        const updatedRows: { title: string, oldStatus: string, newStatus: string, rowIndex: number, oldTicketOp: string, newTicketOp: string }[] = [];
+        const updatedRows: { 
+            title: string, 
+            rowIndex: number, 
+            oldStatus: string, newStatus: string, 
+            oldTicketOp: string, newTicketOp: string,
+            oldCheckout: string, newCheckout: string,
+        }[] = [];
         const ticketNumberRegex = /#(\d+)/;
         
         for (const appRow of data.rows) {
             const detailCase = appRow['Title'];
             const newStatus = appRow['Status'];
-            const newTicketOp = appRow['Ticket OP'];
-
+            const newTicketOp = appRow['Ticket OP'] || '';
+            const newCheckout = appRow['Resolved At'] || '';
 
             if (typeof detailCase === 'string') {
                 const match = detailCase.match(ticketNumberRegex);
@@ -395,25 +417,44 @@ export async function updateSheetStatus(
                     const ticketNumber = match[1];
                     const sheetRowInfo = rowMap[ticketNumber];
                     
-                    if (sheetRowInfo && (sheetRowInfo.currentStatus !== newStatus || sheetRowInfo.currentTicketOp !== newTicketOp)) {
-                         updateRequests.push(
-                            { // Status
-                                range: `${sheetName}!G${sheetRowInfo.rowIndex}`,
-                                values: [[newStatus]],
-                            },
-                            { // Ticket OP
-                                range: `${sheetName}!T${sheetRowInfo.rowIndex}`,
-                                values: [[newTicketOp]],
+                    if (sheetRowInfo) {
+                        const statusChanged = sheetRowInfo.currentStatus !== newStatus;
+                        // Only trigger an update if the new Ticket OP from the app is not empty and different.
+                        const ticketOpChanged = newTicketOp && sheetRowInfo.currentTicketOp !== newTicketOp;
+                        const isSolvedNow = newStatus === 'Solved';
+                        const checkoutWillChange = isSolvedNow && sheetRowInfo.currentCheckout !== newCheckout;
+                        
+                        if (statusChanged || ticketOpChanged || checkoutWillChange) {
+                            if (statusChanged) {
+                                updateRequests.push({
+                                    range: `${sheetName}!G${sheetRowInfo.rowIndex}`,
+                                    values: [[newStatus]],
+                                });
                             }
-                        );
-                        updatedRows.push({ 
-                            title: detailCase, 
-                            oldStatus: sheetRowInfo.currentStatus, 
-                            newStatus, 
-                            rowIndex: sheetRowInfo.rowIndex,
-                            oldTicketOp: sheetRowInfo.currentTicketOp,
-                            newTicketOp
-                        });
+                             if (ticketOpChanged) {
+                                updateRequests.push({
+                                    range: `${sheetName}!T${sheetRowInfo.rowIndex}`,
+                                    values: [[newTicketOp]],
+                                });
+                            }
+                             if (checkoutWillChange) { // Only update checkout if it's changing
+                                updateRequests.push({
+                                    range: `${sheetName}!O${sheetRowInfo.rowIndex}`,
+                                    values: [[newCheckout]],
+                                });
+                            }
+
+                            updatedRows.push({ 
+                                title: detailCase, 
+                                rowIndex: sheetRowInfo.rowIndex,
+                                oldStatus: sheetRowInfo.currentStatus, 
+                                newStatus, 
+                                oldTicketOp: sheetRowInfo.currentTicketOp,
+                                newTicketOp: ticketOpChanged ? newTicketOp : sheetRowInfo.currentTicketOp,
+                                oldCheckout: sheetRowInfo.currentCheckout,
+                                newCheckout: isSolvedNow ? newCheckout : sheetRowInfo.currentCheckout
+                            });
+                        }
                     }
                 }
             }
@@ -472,7 +513,30 @@ export async function importToSheet(
             return { error: `The target sheet named "${sheetName}" was not found in the spreadsheet.` };
         }
 
-        // 2. Find existing titles to avoid duplicates (from column M)
+        // 2. Get last row data
+        const lastRowResponse = await sheets.spreadsheets.values.get({
+            spreadsheetId,
+            range: `${sheetName}!A:C`, // Read No
+            majorDimension: 'ROWS',
+        });
+        const allRows = lastRowResponse.data.values || [];
+        
+        let lastRowIndex = allRows.length;
+        let lastNo = 0;
+        
+        if (allRows.length > 0) {
+           // Find the last row with a valid 'No' in column A
+            for (let i = allRows.length - 1; i >= 0; i--) {
+                const noValue = allRows[i][0];
+                if (noValue && !isNaN(Number(noValue))) {
+                    lastNo = parseInt(noValue, 10);
+                    break;
+                }
+            }
+        }
+
+
+        // 3. Find existing titles to avoid duplicates (from column M)
         const titleRange = `${sheetName}!M:M`;
         const titleResponse = await sheets.spreadsheets.values.get({
             spreadsheetId,
@@ -500,37 +564,68 @@ export async function importToSheet(
                 duplicates: duplicateRows
             };
         }
+        
+        // 4. Prepare data for the append operation.
+        const valuesToAppend = newRows.map((row, index) => {
+            const createdAtStr = row['Created At'];
+            const dateForNewRow = createdAtStr ? new Date(createdAtStr) : new Date();
 
-        // 3. Prepare data for the append operation.
-        // The final structure should have data up to column T.
-        // Columns A-D are empty.
-        // E-O are from the main headers.
-        // P-S are empty.
-        // T is "Ticket OP".
-        const valuesToAppend = newRows.map(row => {
-            const mainData = data.headers
-                .filter(h => h.toLowerCase() !== 'ticket op') // Exclude Ticket OP from main mapping
-                .map(header => row[header] || '');
+            if (isNaN(dateForNewRow.getTime())) {
+                console.warn(`Invalid 'Created At' date for row, using current date: ${createdAtStr}`);
+            }
+
+            const day = dateForNewRow.getDate(); // No padding
+            const month = String(dateForNewRow.getMonth() + 1).padStart(2, '0');
+            const year = dateForNewRow.getFullYear();
+            const dateStr = `${day}/${month}/${year}`;
+            
+            const monthStr = dateForNewRow.toLocaleString('id-ID', { month: 'long' });
+            const yearMonthDay = `${String(year).slice(2)}${month}${String(day).padStart(2, '0')}`;
+
+            const currentRowNumberInSheet = lastRowIndex + index + 1; // 1-based index for the new row
+            const ticketRowNumber = String(currentRowNumberInSheet - 2).padStart(5, '0');
+            const generatedTicketNumber = `TKT-${yearMonthDay}-${ticketRowNumber}`;
+
+            const mainDataHeaders = [
+                'Client Name', 'Customer Name', 'Status', 'Kolom kosong1', 
+                'Ticket Category', 'Module', 'Detail Module', 'Created At', 
+                'Title', 'Kolom kosong2', 'Resolved At'
+            ];
+            
+            const mainData = mainDataHeaders.map(header => row[header] || '');
+
+            const status = mainData[2]; // 'Status' is at index 2 of mainData
+            let statusCase2 = '';
+            if (status === 'L1' || status === 'L2' || status === 'L3') {
+                statusCase2 = 'UNSOLVED';
+            } else if (status === 'Solved') {
+                statusCase2 = 'SOLVED';
+            }
 
             return [
-                '', '', '', '', // A-D
-                ...mainData,   // E-O (11 columns)
-                '', '', '', '', // P-S
-                row['Ticket OP'] || '' // T
+                lastNo + index + 1,        // A - NO
+                dateStr,                   // B - DATE
+                monthStr,                  // C - MONTH
+                generatedTicketNumber,     // D - TICKET NUMBER (Generated)
+                ...mainData,               // E-O (11 columns from JSON)
+                '', '',                    // P-Q - Empty
+                statusCase2,               // R - STATUS CASE 2
+                '',                        // S - Empty
+                row['Ticket OP'] || ''     // T - Ticket OP
             ];
         });
 
-        // 4. Use `append` to add the new rows. This will automatically add new rows if the grid is full.
+        // 5. Use `append` to add the new rows.
         const appendResult = await sheets.spreadsheets.values.append({
             spreadsheetId,
-            range: sheetName, // Append to the entire sheet, API finds the last row
+            range: sheetName,
             valueInputOption: 'USER_ENTERED',
             requestBody: {
                 values: valuesToAppend,
             },
         });
 
-        // 5. Prepare data for the 'Undo' action
+        // 6. Prepare data for the 'Undo' action
         const updatedRange = appendResult.data.updates?.updatedRange;
         if (!updatedRange) {
             return {
@@ -542,7 +637,6 @@ export async function importToSheet(
             };
         }
         
-        // Regex to extract start row from a range like 'All Case'!A2414:T2414
         const rangeRegex = /!A(\d+):/; 
         const matchResult = updatedRange.match(rangeRegex);
         if (!matchResult || !matchResult[1]) {
@@ -623,16 +717,38 @@ export async function undoLastAction(
         }
 
         if (undoData.operationType === 'UPDATE') {
-             const updateRequests = undoData.updatedRows.flatMap((row: { rowIndex: number, oldStatus: string, oldTicketOp: string }) => ([
-                {
+             const updateRequests = undoData.updatedRows.flatMap((row: { 
+                rowIndex: number, 
+                oldStatus: string, 
+                oldTicketOp: string,
+                oldCheckout: string,
+                newStatus: string, // to check if we need to revert checkout
+                newTicketOp: string,
+             }) => {
+                const requests = [];
+                // Always revert status
+                requests.push({
                     range: `${sheetName}!G${row.rowIndex}`,
                     values: [[row.oldStatus]],
-                },
-                {
-                    range: `${sheetName}!T${row.rowIndex}`,
-                    values: [[row.oldTicketOp]],
+                });
+                
+                // Only revert Ticket OP if it was actually changed
+                if (row.newTicketOp && row.oldTicketOp !== row.newTicketOp) {
+                    requests.push({
+                        range: `${sheetName}!T${row.rowIndex}`,
+                        values: [[row.oldTicketOp]],
+                    });
                 }
-            ]));
+
+                // Only revert checkout if it was changed
+                if (row.newStatus === 'Solved') {
+                    requests.push({
+                         range: `${sheetName}!O${row.rowIndex}`,
+                         values: [[row.oldCheckout]],
+                    });
+                }
+                return requests;
+             });
 
             if (updateRequests.length > 0) {
                  await sheets.spreadsheets.values.batchUpdate({
@@ -733,6 +849,132 @@ export async function mergeFilesOnServer(fileAData: any, fileBData: any, mergeKe
     return { mergedRows, unmatchedRowsB };
 }
 
+
+// New function to fetch and format L3 report data
+export async function fetchL3ReportData(sheetUrl: string) {
+    if (!sheetUrl) {
+        return { error: "URL is empty. Please provide a Google Sheet URL." };
+    }
+    const sheetIdRegex = /spreadsheets\/d\/([a-zA-Z0-T-_]+)/;
+    const match = sheetUrl.match(sheetIdRegex);
+    if (!match || !match[1]) {
+        return { error: 'Invalid Google Sheets URL format.' };
+    }
+    const spreadsheetId = match[1];
+
+    try {
+        const sheets = getGoogleSheetsClient();
+        const response = await sheets.spreadsheets.values.get({
+            spreadsheetId,
+            range: 'All Case!B:T', // DATE to Ticket OP
+        });
+
+        const rows = response.data.values;
+        if (!rows || rows.length < 2) {
+            return { error: 'No data found in the sheet.' };
+        }
+
+        const dataRows = rows.slice(1);
+
+        // Hardcoded indexes based on the provided range B:T
+        const dateIndex = 0;         // DATE is in column B (index 0)
+        const statusIndex = 5;       // STATUS CASE is in column G (index 5)
+        const moduleIndex = 8;       // Modul is in column J (index 8)
+        const titleIndex = 11;       // TITLE is in column M (index 11)
+        const ticketOpIndex = 18;    // Ticket OP is in column T (index 18)
+
+        const l3Cases = dataRows.filter(row => row[statusIndex] === 'L3');
+
+        const l3CasesWithDuration = l3Cases.map(row => {
+            const today = new Date();
+            const dateStr = row[dateIndex];
+            let duration = -1; // Default/error value
+            if (dateStr) {
+                const parts = dateStr.split('/');
+                if (parts.length === 3) {
+                    // Assuming DD/MM/YYYY
+                    const caseDate = new Date(`${parts[2]}-${parts[1]}-${parts[0]}`);
+                    if (!isNaN(caseDate.getTime())) {
+                        // Set time to 00:00:00 for both dates to get clean day difference
+                        const todayAtMidnight = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+                        const caseDateAtMidnight = new Date(caseDate.getFullYear(), caseDate.getMonth(), caseDate.getDate());
+                        
+                        const diffTime = Math.abs(todayAtMidnight.getTime() - caseDateAtMidnight.getTime());
+                        duration = Math.floor(diffTime / (1000 * 60 * 60 * 24));
+                    }
+                }
+            }
+            
+            const moduleValue = row[moduleIndex] || '';
+            const category = moduleValue === 'Payment' ? 'Payment' : 'Akademik';
+            const title = row[titleIndex] || '';
+            const ticketOp = row[ticketOpIndex] || '';
+            const fullTitle = [title, ticketOp].filter(Boolean).join(' ');
+
+            return {
+                category: category,
+                title: fullTitle,
+                duration: duration,
+            };
+        });
+
+        const groupedCases: Record<string, typeof l3CasesWithDuration> = {};
+        l3CasesWithDuration.forEach(caseItem => {
+            if (!groupedCases[caseItem.category]) {
+                groupedCases[caseItem.category] = [];
+            }
+            groupedCases[caseItem.category].push(caseItem);
+        });
+
+        const minDate = l3Cases.reduce((min, row) => {
+             const dateStr = row[dateIndex];
+             if (!dateStr) return min;
+             const parts = dateStr.split('/');
+             if (parts.length !== 3) return min;
+             const caseDate = new Date(`${parts[2]}-${parts[1]}-${parts[0]}`);
+             return !min || caseDate < min ? caseDate : min;
+        }, null as Date | null);
+
+        const maxDate = l3Cases.reduce((max, row) => {
+            const dateStr = row[dateIndex];
+             if (!dateStr) return max;
+             const parts = dateStr.split('/');
+             if (parts.length !== 3) return max;
+             const caseDate = new Date(`${parts[2]}-${parts[1]}-${parts[0]}`);
+             return !max || caseDate > max ? caseDate : max;
+        }, null as Date | null);
+
+        const formatDate = (date: Date | null) => {
+            if (!date) return '';
+            const day = String(date.getDate()).padStart(2, '0');
+            const month = String(date.getMonth() + 1).padStart(2, '0');
+            const year = date.getFullYear();
+            return `${day}/${month}/${year}`;
+        }
+
+        let reportText = `Update cases yang belum solved L3 on hold (${formatDate(minDate)} - ${formatDate(maxDate)})\n\n`;
+        reportText += `Total : ${l3Cases.length}\n`;
+        
+        const categoryCounts = Object.entries(groupedCases).map(([category, cases]) => `${category} > L3 : ${cases.length}`).join('\n');
+        reportText += `${categoryCounts}\n\n`;
+
+        Object.entries(groupedCases).forEach(([category, cases]) => {
+            reportText += `${category.toUpperCase()} > L3\n`;
+            cases.forEach((caseItem, index) => {
+                reportText += `${index + 1}. ${caseItem.title} (${caseItem.duration >= 0 ? `${caseItem.duration} hari` : 'N/A'})\n`;
+            });
+            reportText += '\n';
+        });
+
+        return { success: true, report: reportText.trim() };
+
+    } catch (error: any) {
+        console.error('Failed to fetch L3 report data:', error.message);
+        const apiError = error.errors?.[0]?.message || 'An unknown error occurred while fetching L3 report.';
+        return { error: `Report Generation Failed: ${apiError}` };
+    }
+}
+    
     
 
-  
+    

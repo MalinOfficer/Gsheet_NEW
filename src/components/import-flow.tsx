@@ -7,11 +7,11 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Loader2, Upload, Import, DatabaseZap, Save, CheckCircle2, XCircle, ShieldCheck, Undo, Braces, Trash2, Pencil, Copy, Check, BarChart } from 'lucide-react';
-import { getSpreadsheetTitle, importToSheet, updateSheetStatus, getUpdatePreview, undoLastAction } from '@/app/actions';
+import { getSpreadsheetTitle, importToSheet, updateSheetStatus, getUpdatePreview, undoLastAction, fetchL3ReportData } from '@/app/actions';
 import { useToast } from '@/hooks/use-toast';
 import { Label } from './ui/label';
 import { Input } from './ui/input';
-import { TableDataContext, type TableData } from '@/store/table-data-context';
+import { TableDataContext, type TableData, type L3ReportData } from '@/store/table-data-context';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select';
 import {
   AlertDialog,
@@ -35,7 +35,7 @@ const LOCAL_STORAGE_KEY_SHEET_URL = 'gsheetDashboardSheetUrl';
 const DEFAULT_SHEET_URL = 'https://docs.google.com/spreadsheets/d/1aWpDRyFyl6a8bV0-e1ddYVkcfDK5WA498OHMU2Wv9iU/edit?gid=0#gid=0';
 const LOCAL_storage_key_template = 'jsonConverterHeaderTemplate';
 const LOCAL_STORAGE_KEY_INPUT = 'jsonConverterInput';
-const DEFAULT_TEMPLATE = 'Client Name,Customer Name,Status,Kolom kosong1,Ticket Category,Module,Detail Module,Created At,Title,Kolom kosong2,Resolved At,Ticket OP';
+const DEFAULT_TEMPLATE = 'Client Name,Customer Name,Status,TICKET NUMBER,Ticket Category,Module,Detail Module,Created At,Title,Kolom kosong2,Resolved At,Ticket OP';
 
 
 type UpdatePreview = {
@@ -44,6 +44,8 @@ type UpdatePreview = {
     newStatus: string;
     oldTicketOp: string;
     newTicketOp: string;
+    oldCheckout: string;
+    newCheckout: string;
 };
 
 type LastActionUndoData = {
@@ -52,7 +54,7 @@ type LastActionUndoData = {
 } | null;
 
 export function ImportFlow() {
-  const { tableData, setTableData, setIsProcessing: setGlobalProcessing } = useContext(TableDataContext);
+  const { tableData, setTableData, setIsProcessing: setGlobalProcessing, setL3ReportData } = useContext(TableDataContext);
   const [sheetUrl, setSheetUrl] = useState('');
   const [verifiedUrl, setVerifiedUrl] = useState('');
   const [updatePreview, setUpdatePreview] = useState<UpdatePreview[]>([]);
@@ -105,18 +107,34 @@ export function ImportFlow() {
     }
     setSpreadsheetTitle(null);
     setAnalysisError(null);
+    setL3ReportData(null);
     startAnalyzing(async () => {
-        const result = await getSpreadsheetTitle(sheetUrl);
-        if (result.error) {
-            setAnalysisError(result.error);
+        const [titleResult, l3Result] = await Promise.all([
+            getSpreadsheetTitle(sheetUrl),
+            fetchL3ReportData(sheetUrl)
+        ]);
+
+        if (titleResult.error) {
+            setAnalysisError(titleResult.error);
             setVerifiedUrl('');
-        } else if (result.title) {
-            setSpreadsheetTitle(result.title);
+        } else if (titleResult.title) {
+            setSpreadsheetTitle(titleResult.title);
             setVerifiedUrl(sheetUrl);
             setAnalysisError(null);
         }
+
+        if (l3Result.error) {
+            toast({
+                variant: 'destructive',
+                title: 'L3 Report Failed',
+                description: l3Result.error,
+            });
+            setL3ReportData({ error: l3Result.error });
+        } else if (l3Result.success) {
+            setL3ReportData({ report: l3Result.report });
+        }
     });
-  }, [sheetUrl, toast]);
+}, [sheetUrl, toast, setL3ReportData]);
 
   const handleUrlChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const newUrl = e.target.value;
@@ -386,14 +404,18 @@ export function ImportFlow() {
                     const matchingKey = Object.keys(flatRow).find(k => k.toLowerCase() === header.toLowerCase());
                     let value = matchingKey ? flatRow[matchingKey] : '';
 
-                    if (header.toLowerCase() === 'status' && typeof value === 'string') {
-                        const lowerCaseValue = value.toLowerCase();
+                    if (header.toLowerCase() === 'status') {
+                        const lowerCaseValue = String(value).toLowerCase();
                         switch (lowerCaseValue) {
                             case 'resolved': value = 'Solved'; break;
                             case 'open': value = 'L2'; break;
                             case 'pending': value = 'L1'; break;
                             case 'on hold': case 'on-hold': value = 'L3'; break;
+                            case 'new': value = 'L1'; break;
                             default: break;
+                        }
+                        if (!value) {
+                            value = 'L1';
                         }
                     }
                     newRow[header] = value;
@@ -606,10 +628,22 @@ export function ImportFlow() {
                       </Button>
                     </div>
                      <div className='mt-2'>
-                        <Button onClick={handleAnalyzeSheet} variant="outline" size="sm" disabled={isProcessing || isVerified}>
-                            {isAnalyzing ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <ShieldCheck className="w-4 h-4 mr-2" />}
-                            {isAnalyzing ? 'Verifying...' : 'Verify'}
-                        </Button>
+                        {isVerified ? (
+                            <Button size="sm" disabled className="bg-green-600 hover:bg-green-600 text-white">
+                                <CheckCircle2 className="w-4 h-4 mr-2" />
+                                Verified
+                            </Button>
+                        ) : (
+                            <Button
+                              onClick={handleAnalyzeSheet}
+                              variant={isVerified ? 'secondary' : 'default'}
+                              size="sm"
+                              disabled={isProcessing || !sheetUrl}
+                            >
+                                {isAnalyzing ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <ShieldCheck className="w-4 h-4 mr-2" />}
+                                {isAnalyzing ? 'Verifying...' : 'Verify'}
+                            </Button>
+                        )}
                      </div>
                     <div className="mt-1 h-5">
                       {isAnalyzing && <div className="flex items-center text-xs text-muted-foreground"><Loader2 className="w-3 h-3 mr-1.5 animate-spin" /><span>Analyzing...</span></div>}
@@ -659,7 +693,8 @@ export function ImportFlow() {
                                           <li key={index} className='text-foreground'>
                                             {item.title}:
                                             {item.oldStatus !== item.newStatus && <span> Status: <span className='line-through'>{item.oldStatus || 'Kosong'}</span> {'→'} <strong>{item.newStatus}</strong></span>}
-                                            {item.oldTicketOp !== item.newTicketOp && <span> Ticket OP: <span className='line-through'>{item.oldTicketOp || 'Kosong'}</span> {'→'} <strong>{item.newTicketOp}</strong></span>}
+                                            {item.oldTicketOp !== item.newTicketOp && <span>, Ticket OP: <span className='line-through'>{item.oldTicketOp || 'Kosong'}</span> {'→'} <strong>{item.newTicketOp}</strong></span>}
+                                            {item.newStatus === 'Solved' && item.oldCheckout !== item.newCheckout && <span>, Check Out: <strong>{formatDateTime(item.newCheckout, 'jam')}</strong></span>}
                                           </li>
                                         ))}
                                     </ul>
@@ -783,5 +818,7 @@ export function ImportFlow() {
     </div>
   );
 }
+
+    
 
     
