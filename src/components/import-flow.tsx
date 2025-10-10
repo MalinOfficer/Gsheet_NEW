@@ -72,6 +72,7 @@ export function ImportFlow() {
    const [isCopied, setIsCopied] = useState(false);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const destinationCardRef = useRef<HTMLDivElement>(null);
   const router = useRouter();
   const [isImporting, startImporting] = useTransition();
   const [isUpdating, startUpdating] = useTransition();
@@ -99,6 +100,21 @@ export function ImportFlow() {
         setJsonInput(savedJson);
     }
   }, []);
+
+  // Effect for auto-scrolling
+  useEffect(() => {
+    if (tableData && destinationCardRef.current) {
+        const headerOffset = 80; // height of sticky header + some padding
+        const elementPosition = destinationCardRef.current.getBoundingClientRect().top;
+        const offsetPosition = elementPosition + window.scrollY - headerOffset;
+
+        window.scrollTo({
+            top: offsetPosition,
+            behavior: "smooth"
+        });
+    }
+  }, [tableData]);
+
 
   const handleAnalyzeSheet = useCallback(async () => {
     if (!sheetUrl) {
@@ -441,6 +457,7 @@ export function ImportFlow() {
             setTableData({ headers, rows: processedRows });
             localStorage.setItem(LOCAL_STORAGE_KEY_INPUT, jsonInput);
             toast({ title: "Conversion Successful", description: "Your JSON has been converted and sorted." });
+
         } catch (e) {
             setJsonError(e instanceof Error ? `Invalid JSON: ${e.message}` : "An unknown error occurred during conversion.");
         }
@@ -560,10 +577,10 @@ export function ImportFlow() {
                         onChange={(e) => { setJsonInput(e.target.value); setTableData(null); setJsonError(null); }}
                         rows={8}
                         className="font-mono text-xs"
-                        disabled={isProcessing}
+                        disabled={isProcessing || !!tableData}
                     />
                     <div className="flex flex-wrap gap-2">
-                        <Button onClick={handleImportClick} variant="outline" size="sm" disabled={isProcessing}>
+                        <Button onClick={handleImportClick} variant="outline" size="sm" disabled={isProcessing || !!tableData}>
                             <Upload className="mr-2 h-4 w-4" /> Import JSON
                         </Button>
                         <Button onClick={handleDeleteInput} variant="destructive" size="sm" disabled={isProcessing}>
@@ -581,10 +598,10 @@ export function ImportFlow() {
                         onChange={(e) => setTemplateInput(e.target.value)}
                         rows={4}
                         className="font-mono text-xs"
-                        disabled={isProcessing}
+                        disabled={isProcessing || !!tableData}
                     />
                     <div className="flex flex-wrap gap-2">
-                        <Button onClick={handleSaveTemplate} variant="outline" size="sm" disabled={isProcessing}>
+                        <Button onClick={handleSaveTemplate} variant="outline" size="sm" disabled={isProcessing || !!tableData}>
                             <Save className="mr-2 h-4 w-4" /> Save Template
                         </Button>
                     </div>
@@ -592,7 +609,7 @@ export function ImportFlow() {
             </div>
 
             <div className="mt-4">
-                <Button onClick={handleConvert} size="sm" disabled={!jsonInput || isProcessing}>
+                <Button onClick={handleConvert} size="sm" disabled={!jsonInput || isProcessing || !!tableData}>
                     {isConverting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Braces className="mr-2 h-4 w-4" />}
                     {isConverting ? 'Converting...' : 'Convert to Table'}
                 </Button>
@@ -603,7 +620,7 @@ export function ImportFlow() {
         
         {tableData && (
           <>
-            <Card className="shadow-lg">
+            <Card className="shadow-lg" ref={destinationCardRef}>
               <CardHeader>
                 <CardTitle>2. Set Destination and Export</CardTitle>
                 <CardDescription>
@@ -638,6 +655,7 @@ export function ImportFlow() {
                               onClick={handleAnalyzeSheet}
                               variant={isVerified ? 'secondary' : 'default'}
                               size="sm"
+                              className={!isVerified ? 'bg-orange-500 hover:bg-orange-600 text-white' : ''}
                               disabled={isProcessing || !sheetUrl}
                             >
                                 {isAnalyzing ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <ShieldCheck className="w-4 h-4 mr-2" />}
@@ -731,7 +749,7 @@ export function ImportFlow() {
                                 {isCopied ? <Check className="mr-2 h-4 w-4 text-green-500" /> : <Copy className="mr-2 h-4 w-4" />}
                                 {isCopied ? 'Copied!' : 'Copy for Sheets/Excel'}
                             </Button>
-                             <Button onClick={handleNavigateToReport} size="sm" className="w-full sm:w-auto bg-pink-500 hover:bg-pink-600 text-white" disabled={isProcessing || !tableData}>
+                             <Button onClick={handleNavigateToReport} size="sm" className="w-full sm:w-auto bg-pink-500 hover:bg-pink-600 text-white" disabled={isProcessing || !tableData || !isVerified}>
                                 <BarChart className="mr-2 h-4 w-4" />
                                 Report Harian
                             </Button>
@@ -818,7 +836,3 @@ export function ImportFlow() {
     </div>
   );
 }
-
-    
-
-    
