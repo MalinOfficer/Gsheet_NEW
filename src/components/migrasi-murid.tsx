@@ -1,15 +1,13 @@
 
+
 "use client";
 
 import { useState, useCallback, KeyboardEvent, MouseEvent, useMemo, useRef, useEffect } from "react";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from "@/components/ui/card";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
 import { Button } from "./ui/button";
 import { Input } from "./ui/input";
 import { PlusCircle, Wand2, Download, Undo2, Redo2, Trash2 } from "lucide-react";
-import { Skeleton } from "@/components/ui/skeleton";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -27,8 +25,8 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { useVirtualizer } from '@tanstack/react-virtual';
 
-declare const XLSX: any;
 
 const tableHeaders = [
     "No", "Username", "NIS", "NISN", "NIK", "Kode", "Asal Sekolah", "Nama", "L/P",
@@ -46,27 +44,35 @@ type CellSelection = {
 // Helper to create an empty row
 const createEmptyRow = (): MuridData => tableHeaders.reduce((acc, header) => ({ ...acc, [header]: '' }), {});
 
-const INITIAL_ROWS = 30;
+const INITIAL_ROWS = 23;
 
 const monthMap: { [key: string]: string } = {
-    'januari': '01', 'februari': '02', 'maret': '03', 'april': '04',
-    'mei': '05', 'juni': '06', 'juli': '07', 'agustus': '08',
-    'september': '09', 'oktober': '10', 'november': '11', 'desember': '12',
-    'jan': '01', 'feb': '02', 'mar': '03', 'apr': '04', 'may': '05', 'jun': '06',
-    'jul': '07', 'aug': '08', 'sep': '09', 'oct': '10', 'nov': '11', 'dec': '12'
+    'januari': '01', 'janu': '01', 'jan': '01',
+    'februari': '02', 'feb': '02', 'febr': '02',
+    'maret': '03', 'mar': '03',
+    'april': '04', 'apr': '04',
+    'mei': '05',
+    'juni': '06', 'jun': '06',
+    'juli': '07', 'jul': '07',
+    'agustus': '08', 'agu': '08', 'ags': '08',
+    'september': '09', 'sep': '09', 'sept': '09',
+    'oktober': '10', 'okt': '10', 'oct': '10',
+    'november': '11', 'nov': '11',
+    'desember': '12', 'des': '12',
 };
 
 const parseAndFormatDate = (dateStr: string): string | null => {
     if (!dateStr || typeof dateStr !== 'string') return null;
 
-    const trimmedDate = dateStr.trim();
+    const trimmedDate = dateStr.trim().toLowerCase();
     
     // Check if it's already in DD/MM/YYYY format
     if (/^\d{1,2}\/\d{1,2}\/\d{4}$/.test(trimmedDate)) {
         const parts = trimmedDate.split('/');
         const day = parts[0].padStart(2, '0');
         const month = parts[1].padStart(2, '0');
-        if (parseInt(month, 10) > 12) { // Likely MM/DD/YYYY format
+        // Handle potential MM/DD/YYYY to DD/MM/YYYY swap
+        if (parseInt(month, 10) > 12) {
              return `${parts[1].padStart(2, '0')}/${parts[0].padStart(2, '0')}/${parts[2]}`;
         }
         return `${day}/${month}/${parts[2]}`;
@@ -81,13 +87,25 @@ const parseAndFormatDate = (dateStr: string): string | null => {
         return `${day}/${month}/${year}`;
     }
 
-    // Try parsing DD-MonthName-YYYY (e.g., 03-Januari-2009)
-    const monthMatch = trimmedDate.match(/^(\d{1,2})[-.\s]([a-zA-Z]+)[-.\s](\d{4})$/);
-    if (monthMatch) {
-        const day = monthMatch[1].padStart(2, '0');
-        const monthName = monthMatch[2].toLowerCase();
-        const year = monthMatch[3];
-        const month = monthMap[monthName];
+    // Try parsing DD-MonthName-YYYY (e.g., 03-Januari-2009) or MonthName DD YYYY
+    const datePartsMatch = trimmedDate.match(/^(?:(\d{1,2})[-.\s])?([a-zA-Z]+)[-.\s](\d{1,2})?[-.\s](\d{4})$/);
+    if (datePartsMatch) {
+        const potentialDay1 = datePartsMatch[1];
+        const monthName = datePartsMatch[2];
+        const potentialDay2 = datePartsMatch[3];
+        const year = datePartsMatch[4];
+
+        const day = (potentialDay1 || potentialDay2)?.padStart(2, '0');
+        
+        let month: string | undefined = undefined;
+        // Find a matching month prefix
+        for (const key in monthMap) {
+            if (monthName.startsWith(key)) {
+                month = monthMap[key];
+                break;
+            }
+        }
+
         if (day && month && year) {
             return `${day}/${month}/${year}`;
         }
@@ -102,6 +120,26 @@ const parseAndFormatDate = (dateStr: string): string | null => {
         return `${day}/${month}/${year}`;
     }
 
+    // Try parsing MonthName DD YYYY (e.g., januari 21 2000)
+    const monthFirstMatch = trimmedDate.match(/^([a-zA-Z]+)\s(\d{1,2})\s(\d{4})$/);
+    if (monthFirstMatch) {
+        const monthName = monthFirstMatch[1];
+        const day = monthFirstMatch[2].padStart(2, '0');
+        const year = monthFirstMatch[3];
+        
+        let month: string | undefined = undefined;
+        for (const key in monthMap) {
+            if (monthName.startsWith(key)) {
+                month = monthMap[key];
+                break;
+            }
+        }
+
+        if (day && month && year) {
+            return `${day}/${month}/${year}`;
+        }
+    }
+
     return null; // Return null if no format matches
 };
 
@@ -109,23 +147,17 @@ const parseAndFormatDate = (dateStr: string): string | null => {
 export function MigrasiMurid() {
     const [rows, setRows] = useState<MuridData[]>(() => Array.from({ length: INITIAL_ROWS }, (_, i) => createEmptyRow()));
     const [selectedRange, setSelectedRange] = useState<{ start: CellSelection | null, end: CellSelection | null }>({ start: null, end: null });
-    const [numRowsToAdd, setNumRowsToAdd] = useState(1);
+    const [numRowsToAdd, setNumRowsToAdd] = useState<number | string>(1);
     const { toast } = useToast();
     const isSelecting = useRef(false);
     
     const [isDraggingFill, setIsDraggingFill] = useState(false);
     const [fillRange, setFillRange] = useState<{ start: CellSelection, end: CellSelection } | null>(null);
 
-
     const [history, setHistory] = useState<MuridData[][]>([rows]);
     const [historyIndex, setHistoryIndex] = useState(0);
 
-    const [isClient, setIsClient] = useState(false);
-    
-
-    useEffect(() => {
-        setIsClient(true);
-    }, []);
+    const tableContainerRef = useRef<HTMLDivElement>(null);
     
 
     const recordHistory = (newRows: MuridData[]) => {
@@ -348,15 +380,15 @@ export function MigrasiMurid() {
             if (tableHeaders[col] === "No") return;
             setSelectedRange(prev => ({ ...prev, end: { row, col } }));
         } else if (isDraggingFill) {
-            const { startRow, endRow, startCol, endCol } = normalizedSelectedRange;
+            const { startRow, endRow, startCol: selStartCol, endCol: selEndCol } = normalizedSelectedRange;
             let newFillEnd: CellSelection;
             // Determine drag direction
-            if (Math.abs(row - endRow) > Math.abs(col - endCol)) { // Vertical drag
-                 newFillEnd = { row: row, col: endCol };
-                 setFillRange({ start: { row: startRow, col: startCol }, end: newFillEnd });
+            if (Math.abs(row - endRow) > Math.abs(col - selEndCol)) { // Vertical drag
+                 newFillEnd = { row: row, col: selEndCol };
+                 setFillRange({ start: { row: startRow, col: selStartCol }, end: newFillEnd });
             } else { // Horizontal drag
                  newFillEnd = { row: endRow, col: col };
-                 setFillRange({ start: { row: startRow, col: startCol }, end: newFillEnd });
+                 setFillRange({ start: { row: startRow, col: selStartCol }, end: newFillEnd });
             }
         }
     };
@@ -396,16 +428,6 @@ export function MigrasiMurid() {
             setFillRange(null);
         }
     };
-    
-     const handleFillHandleMouseDown = (e: MouseEvent) => {
-        e.stopPropagation();
-        e.preventDefault();
-        setIsDraggingFill(true);
-        isSelecting.current = false;
-        if (selectedRange.start) {
-            setFillRange({ start: selectedRange.start, end: selectedRange.end || selectedRange.start });
-        }
-    };
 
     const handlePaste = useCallback((event: React.ClipboardEvent<HTMLDivElement>) => {
         event.preventDefault();
@@ -426,16 +448,18 @@ export function MigrasiMurid() {
         let newRows = [...rows];
         let changes = 0;
         const dateHeader = "Tanggal Lahir";
+        
+        const requiredRowCount = startCell.row + pastedLines.length;
+        if (requiredRowCount > newRows.length) {
+            const rowsToAdd = requiredRowCount - newRows.length;
+            newRows = [...newRows, ...Array.from({ length: rowsToAdd }, createEmptyRow)];
+        }
 
         pastedLines.forEach((line, lineIndex) => {
             const rowIndex = startCell.row + lineIndex;
-            if (rowIndex >= newRows.length) {
-                newRows = [...newRows, ...Array.from({ length: rowIndex - newRows.length + 1 }, createEmptyRow)];
-            }
-
-            const values = line.split('\t');
             let updatedRow = { ...newRows[rowIndex] };
 
+            const values = line.split('\t');
             values.forEach((value, valueIndex) => {
                 const colIndex = startCell.col + valueIndex;
                 if (colIndex >= tableHeaders.length) return;
@@ -472,8 +496,11 @@ export function MigrasiMurid() {
     }, [selectedRange.start, toast, rows, handleRowsChange]);
 
     const handleAddRows = () => {
-        const count = Number(numRowsToAdd);
-        if (isNaN(count) || count < 1) return;
+        const count = Number(numRowsToAdd) || 1;
+        if (isNaN(count) || count < 1) {
+            toast({ variant: 'destructive', title: 'Invalid Number', description: 'Please enter a valid number of rows to add.' });
+            return;
+        }
         const newRows = [...rows, ...Array.from({ length: count }, createEmptyRow)];
         handleRowsChange(newRows);
         toast({ title: "Rows Added", description: `${count} empty rows have been added.` });
@@ -517,7 +544,7 @@ export function MigrasiMurid() {
         const month = parseInt(parts[1], 10) - 1; // Month is 0-indexed in JS
         const year = parseInt(parts[2], 10);
         const date = new Date(Date.UTC(year, month, day));
-        if (date.getUTCFullYear() !== year || date.getUTCMonth() !== month || date.getUTCDate() !== day) {
+        if (date.getUTCFullYear() !== year || date.getUTCFullMonth() !== month || date.getUTCDate() !== day) {
             return null;
         }
         return date;
@@ -529,30 +556,27 @@ export function MigrasiMurid() {
             return;
         }
         const dateHeader = "Tanggal Lahir";
+        
         const processedRows = rows
+            .filter((row) => row["Username"]) // Filter rows that have a username
             .map((row, index) => {
-                // Always show row 1, or show other rows if they have a username
-                 if (index === 0 || row['Username']) {
-                    const newRow: Record<string, any> = { ...row, No: String(index + 1) };
-                    const dateValue = newRow[dateHeader];
-                    if (dateValue && typeof dateValue === 'string') {
-                        const parsedDate = parseDateString(dateValue);
-                        if (parsedDate) {
-                            newRow[dateHeader] = parsedDate;
-                        }
+                const newRow: Record<string, any> = {...row};
+                newRow["No"] = index + 1; // Re-number based on filtered position
+                const dateValue = newRow[dateHeader];
+                if (dateValue && typeof dateValue === 'string') {
+                    const parsedDate = parseDateString(dateValue);
+                    if (parsedDate) {
+                        newRow[dateHeader] = parsedDate;
                     }
-                    return newRow;
                 }
-                return null;
-            })
-            .filter(row => row !== null && Object.values(row).some(val => val !== null && val !== ''));
-
+                return newRow;
+            });
 
         if (processedRows.length === 0) {
             toast({
                 variant: "destructive",
                 title: "No Data to Export",
-                description: "The table is empty. Please add some data before exporting.",
+                description: "The table is empty or no rows have a username. Please add some data before exporting.",
             });
             return;
         }
@@ -579,183 +603,195 @@ export function MigrasiMurid() {
         toast({ title: "Table Cleared", description: "All data has been cleared from the table." });
     };
 
-    if (!isClient) {
-        return (
-             <div className="px-4 py-2">
-                <Card>
-                    <CardHeader>
-                        <Skeleton className="h-8 w-64" />
-                    </CardHeader>
-                    <div className="px-6 pb-4 flex flex-wrap items-center gap-2 border-b">
-                        <Skeleton className="h-9 w-24" />
-                        <Skeleton className="h-9 w-24" />
-                        <Skeleton className="h-9 w-28" />
-                        <Skeleton className="h-9 w-28" />
-                    </div>
-                    <CardContent>
-                        <Skeleton className="h-[500px] w-full" />
-                    </CardContent>
-                </Card>
-            </div>
-        )
-    }
+    const rowVirtualizer = useVirtualizer({
+        count: rows.length,
+        getScrollElement: () => tableContainerRef.current,
+        estimateSize: () => 28, // Corresponds to h-7
+        overscan: 5,
+    });
+    
+    const virtualRows = rowVirtualizer.getVirtualItems();
+    const totalHeight = rowVirtualizer.getTotalSize();
+    
+    const getRowNumberValue = (row: MuridData, index: number) => {
+        return (row["Username"] || index === 0) ? String(index + 1) : "";
+    };
+
+    const handleFillHandleMouseDown = (e: MouseEvent) => {
+        e.preventDefault();
+        e.stopPropagation();
+        setIsDraggingFill(true);
+        if (selectedRange.start) {
+            setFillRange({ start: selectedRange.start, end: selectedRange.end || selectedRange.start });
+        }
+    };
+
 
     return (
-        <div className="px-4 py-2" onMouseUp={handleMouseUp} onMouseLeave={handleMouseUp}>
-            <Card>
-                <CardHeader className="flex flex-row justify-between items-center p-4">
-                    <CardTitle className="text-xl">Data Murid untuk Migrasi</CardTitle>
-                     <div className="flex items-center gap-2">
-                         <Button onClick={handleUndo} size="sm" variant="outline" disabled={historyIndex === 0}>
+        <div className="h-full flex flex-col bg-background" onMouseUp={handleMouseUp} onPaste={handlePaste}>
+            <div className="flex-shrink-0 p-4 border-b">
+                <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
+                    <div>
+                        <h1 className="text-xl font-bold tracking-tight">Data Murid</h1>
+                        <p className="text-sm text-muted-foreground mt-1">Input dan format data migrasi siswa seperti menggunakan spreadsheet.</p>
+                    </div>
+                    <div className="flex items-center gap-2 flex-wrap">
+                        <Button onClick={handleUndo} size="sm" variant="outline" disabled={historyIndex === 0}>
                             <Undo2 className="mr-2 h-4 w-4" /> Undo
                         </Button>
                         <Button onClick={handleRedo} size="sm" variant="outline" disabled={historyIndex === history.length - 1}>
                             <Redo2 className="mr-2 h-4 w-4" /> Redo
                         </Button>
                         <AlertDialog>
-                          <AlertDialogTrigger asChild>
+                            <AlertDialogTrigger asChild>
                             <Button size="sm" variant="destructive">
                                 <Trash2 className="mr-2 h-4 w-4" /> Delete All
                             </Button>
-                          </AlertDialogTrigger>
-                          <AlertDialogContent>
+                            </AlertDialogTrigger>
+                            <AlertDialogContent>
                             <AlertDialogHeader>
-                              <AlertDialogTitle>Are you absolutely sure?</AlertDialogTitle>
-                              <AlertDialogDescription>
+                                <AlertDialogTitle>Are you absolutely sure?</AlertDialogTitle>
+                                <AlertDialogDescription>
                                 This action will permanently delete all data from the table. You cannot undo this action.
-                              </AlertDialogDescription>
+                                </AlertDialogDescription>
                             </AlertDialogHeader>
                             <AlertDialogFooter>
-                              <AlertDialogCancel>Cancel</AlertDialogCancel>
-                              <AlertDialogAction onClick={handleClearTable}>Continue</AlertDialogAction>
+                                <AlertDialogCancel>Cancel</AlertDialogCancel>
+                                <AlertDialogAction onClick={handleClearTable}>Continue</AlertDialogAction>
                             </AlertDialogFooter>
-                          </AlertDialogContent>
+                            </AlertDialogContent>
                         </AlertDialog>
                         <Button
-                          onClick={handleExportExcel}
-                          size="sm"
-                          className="bg-green-600 text-white hover:bg-green-700"
+                            onClick={handleExportExcel}
+                            size="sm"
+                            className="bg-green-600 text-white hover:bg-green-700"
                         >
                             <Download className="mr-2 h-4 w-4" />
                             Export
                         </Button>
                     </div>
-                </CardHeader>
-                <CardContent className="p-0">
-                    <div onPaste={handlePaste} className="overflow-auto border-t rounded-t-none rounded-b-md max-h-[500px]">
-                        <Table className="border-collapse w-full" style={{ tableLayout: 'fixed' }}>
-                            <TableHeader className="sticky top-0 z-20 bg-card">
-                                <TableRow className="border-0">
-                                    {tableHeaders.map((header) => (
-                                        <TableHead 
-                                            key={header} 
-                                            style={{ width: `${columnWidths[header]}px`}}
-                                            className={cn(
-                                                "border-b border-r bg-muted/50 p-0 text-xs font-bold text-center relative select-none",
-                                            )}
-                                        >
-                                            <div className="px-2 py-2 flex items-center justify-center gap-1 whitespace-normal break-words">
-                                                {header}
-                                                {header === "Tanggal Lahir" && (
-                                                    <DropdownMenu>
-                                                        <DropdownMenuTrigger asChild>
-                                                            <Button variant="ghost" size="icon" className="h-5 w-5">
-                                                                <Wand2 className="h-3 w-3" />
-                                                                <span className="sr-only">Format Menu</span>
-                                                            </Button>
-                                                        </DropdownMenuTrigger>
-                                                        <DropdownMenuContent>
-                                                            <DropdownMenuItem onClick={handleFormatDates}>
-                                                                Format ke DD/MM/YYYY
-                                                            </DropdownMenuItem>
-                                                        </DropdownMenuContent>
-                                                    </DropdownMenu>
+                </div>
+            </div>
+
+            <div className="flex-grow overflow-auto" ref={tableContainerRef}>
+                 <div 
+                    style={{ 
+                        width: `${tableHeaders.reduce((acc, h) => acc + columnWidths[h], 0)}px`,
+                        height: `${totalHeight + 36}px`,
+                        position: 'relative',
+                    }}
+                >
+                    <div className="sticky top-0 z-20 flex bg-secondary" style={{height: '36px'}}>
+                        {tableHeaders.map((header) => (
+                            <div
+                                key={header}
+                                style={{ width: columnWidths[header] }}
+                                className="relative select-none border-r border-b px-2 py-2 flex items-center justify-center font-semibold text-xs text-foreground"
+                            >
+                                <span className="truncate">{header}</span>
+                                {header === "Tanggal Lahir" && (
+                                    <DropdownMenu>
+                                        <DropdownMenuTrigger asChild>
+                                            <Button variant="ghost" size="icon" className="h-5 w-5 ml-1">
+                                                <Wand2 className="h-3 w-3" />
+                                                <span className="sr-only">Format Menu</span>
+                                            </Button>
+                                        </DropdownMenuTrigger>
+                                        <DropdownMenuContent>
+                                            <DropdownMenuItem onClick={handleFormatDates}>
+                                                Format ke DD/MM/YYYY
+                                            </DropdownMenuItem>
+                                        </DropdownMenuContent>
+                                    </DropdownMenu>
+                                )}
+                                <div
+                                    onMouseDown={(e: MouseEvent) => handleResizeMouseDown(header, e)}
+                                    className="absolute top-0 right-0 h-full w-1.5 cursor-col-resize z-10"
+                                />
+                            </div>
+                        ))}
+                    </div>
+                    
+                    <div style={{ paddingTop: '36px', height: totalHeight, position: 'relative' }}>
+                        {virtualRows.map(virtualRow => {
+                            const row = rows[virtualRow.index];
+                            return (
+                                <div
+                                    key={virtualRow.key}
+                                    className="flex absolute top-0 left-0"
+                                    style={{
+                                        width: '100%',
+                                        height: `${virtualRow.size}px`,
+                                        transform: `translateY(${virtualRow.start}px)`,
+                                    }}
+                                >
+                                    {tableHeaders.map((header, colIndex) => {
+                                        const isSelected = isCellSelected(virtualRow.index, colIndex);
+                                        const isFillPreviewing = isDraggingFill && isCellInFillRange(virtualRow.index, colIndex) && !isSelected;
+                                        const isBottomRightCell = selectedRange.start && normalizedSelectedRange.endRow === virtualRow.index && normalizedSelectedRange.endCol === colIndex;
+                                        
+                                        return (
+                                            <div
+                                                key={`${virtualRow.index}-${colIndex}`}
+                                                style={{ width: columnWidths[header] }}
+                                                className={cn("p-0 m-0 border-r border-b relative flex items-center")}
+                                            >
+                                                <Input
+                                                    type="text"
+                                                    value={header === "No" ? getRowNumberValue(row, virtualRow.index) : String(row[header] || "")}
+                                                    readOnly={header === "No"}
+                                                    onChange={(e) => handleCellChange(virtualRow.index, header, e.target.value)}
+                                                    onKeyDown={(e) => handleKeyDown(e, { row: virtualRow.index, col: colIndex })}
+                                                    onMouseDown={(e) => handleMouseDown(e, { row: virtualRow.index, col: colIndex })}
+                                                    onMouseOver={(e) => handleMouseOver(e, { row: virtualRow.index, col: colIndex })}
+                                                    data-row={virtualRow.index}
+                                                    data-col={colIndex}
+                                                    className={cn(
+                                                        "w-full h-7 text-xs px-1 rounded-none border-0 bg-transparent focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-primary z-10 relative",
+                                                        header === "No" && "text-center cursor-default bg-muted/30 focus-visible:ring-0",
+                                                        isSelected && "bg-blue-100/50 dark:bg-blue-900/50",
+                                                        isFillPreviewing && "bg-green-200/50 dark:bg-green-900/50"
+                                                    )}
+                                                />
+                                                {isSelected && <div className="absolute inset-0 border-2 border-primary pointer-events-none z-10" />}
+                                                {isBottomRightCell && !isDraggingFill && (
+                                                    <div 
+                                                        onMouseDown={handleFillHandleMouseDown}
+                                                        className="absolute -bottom-1 -right-1 h-2 w-2 bg-primary cursor-crosshair z-20 border border-background"
+                                                    />
                                                 )}
                                             </div>
-                                            <div
-                                                onMouseDown={(e: MouseEvent) => handleResizeMouseDown(header, e)}
-                                                className="absolute top-0 right-0 h-full w-1.5 cursor-col-resize z-10"
-                                            />
-                                        </TableHead>
-                                    ))}
-                                </TableRow>
-                            </TableHeader>
-                            <TableBody>
-                            {rows.map((row, rowIndex) => (
-                                <TableRow key={`row-${rowIndex}`} className="border-0 m-0 p-0">
-                                    {tableHeaders.map((header, colIndex) => {
-                                        const isSelected = isCellSelected(rowIndex, colIndex);
-                                        const isFillPreviewing = isDraggingFill && isCellInFillRange(rowIndex, colIndex) && !isSelected;
-                                        const isBottomRightOfSelection = selectedRange.start && normalizedSelectedRange.endRow === rowIndex && normalizedSelectedRange.endCol === colIndex;
-
-                                        let cellValue;
-                                         if (header === "No") {
-                                            cellValue = (rowIndex === 0 || row['Username']) ? String(rowIndex + 1) : '';
-                                        } else {
-                                            cellValue = row[header] || '';
-                                        }
-
-                                        return (
-                                        <TableCell 
-                                            key={`cell-${rowIndex}-${colIndex}`} 
-                                            style={{ width: `${columnWidths[header]}px`}}
-                                            className={cn(
-                                                "border-t border-r p-0 m-0 h-auto relative",
-                                                { "bg-muted/30": header === "No" },
-                                                isSelected && header !== "No" ? 'bg-blue-100/50 dark:bg-blue-900/50' : '',
-                                                isFillPreviewing ? 'bg-green-200/50 dark:bg-green-900/50' : ''
-                                            )}
-                                        >
-                                            <Input
-                                              type="text"
-                                              value={cellValue}
-                                              readOnly={header === "No"}
-                                              onChange={(e) => handleCellChange(rowIndex, header, e.target.value)}
-                                              onKeyDown={(e) => handleKeyDown(e, { row: rowIndex, col: colIndex })}
-                                              onMouseDown={(e) => handleMouseDown(e, { row: rowIndex, col: colIndex })}
-                                              onMouseOver={(e) => handleMouseOver(e, { row: rowIndex, col: colIndex })}
-                                              data-row={rowIndex}
-                                              data-col={colIndex}
-                                              className={cn(
-                                                  "w-full h-full text-xs p-1 rounded-none border-0 bg-transparent focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-primary z-10 relative",
-                                                  "whitespace-normal break-words py-2",
-                                                  header === "No" && "text-center cursor-default bg-muted/30 focus-visible:ring-0",
-                                                  isSelected ? 'bg-transparent' : ''
-                                              )}
-                                            />
-                                            {isSelected && <div className="absolute inset-0 border-2 border-primary pointer-events-none z-10" />}
-                                            {isBottomRightOfSelection && !isDraggingFill && (
-                                                <div 
-                                                    onMouseDown={handleFillHandleMouseDown}
-                                                    className="absolute -bottom-1 -right-1 h-2 w-2 bg-primary cursor-crosshair z-20 border border-background"
-                                                />
-                                            )}
-                                        </TableCell>
-                                    )})}
-                                </TableRow>
-                            ))}
-                            </TableBody>
-                        </Table>
+                                        );
+                                    })}
+                                </div>
+                            );
+                        })}
                     </div>
-                </CardContent>
-                 <CardFooter className="pt-4">
-                    <div className="flex items-center gap-2">
-                       <Input
-                            type="number"
-                            value={numRowsToAdd}
-                            onChange={(e) => setNumRowsToAdd(Math.max(1, parseInt(e.target.value, 10) || 1))}
-                            className="w-24 h-9"
-                            min="1"
-                        />
-                        <Button onClick={handleAddRows} size="sm" variant="outline">
-                            <PlusCircle className="mr-2 h-4 w-4" />
-                            Tambah Baris
-                        </Button>
-                    </div>
-                </CardFooter>
-            </Card>
+                </div>
+            </div>
+
+
+            <div className="flex-shrink-0 p-2 border-t">
+                <div className="flex items-center gap-2">
+                    <Input
+                        type="number"
+                        value={numRowsToAdd}
+                        onChange={(e) => {
+                            setNumRowsToAdd(e.target.value);
+                        }}
+                        placeholder=""
+                        className="w-24 h-9"
+                    />
+                    <Button onClick={handleAddRows} size="sm" variant="outline">
+                        <PlusCircle className="mr-2 h-4 w-4" />
+                        Tambah Baris
+                    </Button>
+                </div>
+            </div>
         </div>
     );
 }
+
+    
 
     

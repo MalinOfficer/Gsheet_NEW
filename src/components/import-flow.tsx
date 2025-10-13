@@ -29,6 +29,8 @@ import { Alert, AlertDescription, AlertTitle } from './ui/alert';
 import { AlertCircle } from 'lucide-react';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuRadioGroup, DropdownMenuRadioItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { formatDateTime, type DateFormat } from '@/lib/date-utils';
+import { useVirtualizer } from '@tanstack/react-virtual';
+import { cn } from '@/lib/utils';
 
 
 const LOCAL_STORAGE_KEY_SHEET_URL = 'gsheetDashboardSheetUrl';
@@ -54,13 +56,18 @@ type LastActionUndoData = {
 } | null;
 
 export function ImportFlow() {
-  const { tableData, setTableData, setIsProcessing: setGlobalProcessing, setL3ReportData } = useContext(TableDataContext);
-  const [sheetUrl, setSheetUrl] = useState('');
-  const [verifiedUrl, setVerifiedUrl] = useState('');
+  const { 
+    tableData, setTableData, 
+    isProcessing, setIsProcessing: setGlobalProcessing, 
+    l3ReportData, setL3ReportData,
+    sheetUrl, setSheetUrl,
+    verifiedUrl, setVerifiedUrl,
+    spreadsheetTitle, setSpreadsheetTitle
+  } = useContext(TableDataContext);
+
   const [updatePreview, setUpdatePreview] = useState<UpdatePreview[]>([]);
   const [isUpdateConfirmOpen, setIsUpdateConfirmOpen] = useState(false);
   const [lastActionUndoData, setLastActionUndoData] = useState<LastActionUndoData>(null);
-  const [spreadsheetTitle, setSpreadsheetTitle] = useState<string | null>(null);
   const [analysisError, setAnalysisError] = useState<string | null>(null);
   const [jsonInput, setJsonInput] = useState('');
   const [templateInput, setTemplateInput] = useState(DEFAULT_TEMPLATE);
@@ -81,18 +88,20 @@ export function ImportFlow() {
   const [isAnalyzing, startAnalyzing] = useTransition();
   const [isConverting, startConverting] = useTransition();
   
-  const isProcessing = isImporting || isUpdating || isPreviewing || isUndoing || isAnalyzing || isConverting;
+  const isAnyProcessing = isImporting || isUpdating || isPreviewing || isUndoing || isAnalyzing || isConverting;
 
   useEffect(() => {
-    setGlobalProcessing(isProcessing);
-  }, [isProcessing, setGlobalProcessing]);
+    setGlobalProcessing(isAnyProcessing);
+  }, [isAnyProcessing, setGlobalProcessing]);
 
 
   const { toast } = useToast();
 
   useEffect(() => {
     const savedUrl = localStorage.getItem(LOCAL_STORAGE_KEY_SHEET_URL);
-    setSheetUrl(savedUrl || DEFAULT_SHEET_URL);
+    if (!sheetUrl) { // Only set from localStorage if context is empty
+        setSheetUrl(savedUrl || DEFAULT_SHEET_URL);
+    }
     const savedTemplate = localStorage.getItem(LOCAL_storage_key_template);
     setTemplateInput(savedTemplate || DEFAULT_TEMPLATE);
     const savedJson = localStorage.getItem(LOCAL_STORAGE_KEY_INPUT);
@@ -123,11 +132,14 @@ export function ImportFlow() {
     }
     setSpreadsheetTitle(null);
     setAnalysisError(null);
-    setL3ReportData(null);
+    if (!l3ReportData) { // Avoid re-fetching if already present
+      setL3ReportData(null);
+    }
     startAnalyzing(async () => {
         const [titleResult, l3Result] = await Promise.all([
             getSpreadsheetTitle(sheetUrl),
-            fetchL3ReportData(sheetUrl)
+            // Only fetch L3 data if it's not already in context
+            l3ReportData ? Promise.resolve({ success: true, report: l3ReportData.report }) : fetchL3ReportData(sheetUrl)
         ]);
 
         if (titleResult.error) {
@@ -150,7 +162,7 @@ export function ImportFlow() {
             setL3ReportData({ report: l3Result.report });
         }
     });
-}, [sheetUrl, toast, setL3ReportData]);
+}, [sheetUrl, toast, setSpreadsheetTitle, setVerifiedUrl, setL3ReportData, l3ReportData]);
 
   const handleUrlChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const newUrl = e.target.value;
@@ -160,6 +172,7 @@ export function ImportFlow() {
       setSpreadsheetTitle(null);
       setAnalysisError(null);
       setVerifiedUrl('');
+      setL3ReportData(null); // Clear L3 report if URL changes
     }
   };
 
@@ -735,66 +748,130 @@ export function ImportFlow() {
               </CardContent>
             </Card>
 
-            <Card className="shadow-lg mt-6">
-                <CardHeader>
-                    <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2">
-                        <div>
-                            <CardTitle>3. Data Preview</CardTitle>
-                            <CardDescription>
-                                Ini adalah pratinjau data yang akan diekspor. Anda dapat mengubah status di sini sebelum mengekspor.
-                            </CardDescription>
-                        </div>
-                         <div className="flex flex-col sm:flex-row gap-2 w-full sm:w-auto">
-                            <Button onClick={handleCopyToClipboard} variant="outline" size="sm" className="w-full sm:w-auto" disabled={isProcessing}>
-                                {isCopied ? <Check className="mr-2 h-4 w-4 text-green-500" /> : <Copy className="mr-2 h-4 w-4" />}
-                                {isCopied ? 'Copied!' : 'Copy for Sheets/Excel'}
-                            </Button>
-                             <Button onClick={handleNavigateToReport} size="sm" className="w-full sm:w-auto bg-pink-500 hover:bg-pink-600 text-white" disabled={isProcessing || !tableData || !isVerified}>
-                                <BarChart className="mr-2 h-4 w-4" />
-                                Report Harian
-                            </Button>
-                        </div>
+            <PreviewTable
+                tableData={tableData}
+                dateFormats={dateFormats}
+                isProcessing={isProcessing}
+                handleStatusChange={handleStatusChange}
+                handleDateFormatChange={handleDateFormatChange}
+                handleCopyToClipboard={handleCopyToClipboard}
+                isCopied={isCopied}
+                handleNavigateToReport={handleNavigateToReport}
+            />
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
+
+function PreviewTable({
+    tableData,
+    dateFormats,
+    isProcessing,
+    handleStatusChange,
+    handleDateFormatChange,
+    handleCopyToClipboard,
+    isCopied,
+    handleNavigateToReport,
+} : {
+    tableData: TableData;
+    dateFormats: Record<string, DateFormat>;
+    isProcessing: boolean;
+    handleStatusChange: (rowIndex: number, header: string, value: string) => void;
+    handleDateFormatChange: (header: string, format: string) => void;
+    handleCopyToClipboard: () => void;
+    isCopied: boolean;
+    handleNavigateToReport: () => void;
+}) {
+    const tableContainerRef = useRef<HTMLDivElement>(null);
+
+    const rowVirtualizer = useVirtualizer({
+        count: tableData.rows.length,
+        getScrollElement: () => tableContainerRef.current,
+        estimateSize: () => 45, // Estimate row height
+        overscan: 5,
+    });
+
+    const virtualRows = rowVirtualizer.getVirtualItems();
+    const totalHeight = rowVirtualizer.getTotalSize();
+
+    return (
+         <Card className="shadow-lg mt-6">
+            <CardHeader>
+                <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2">
+                    <div>
+                        <CardTitle>3. Data Preview</CardTitle>
+                        <CardDescription>
+                            Ini adalah pratinjau data yang akan diekspor. Anda dapat mengubah status di sini sebelum mengekspor.
+                        </CardDescription>
                     </div>
-                </CardHeader>
-                <CardContent>
-                    <div className="relative w-full overflow-auto rounded-md border max-h-[500px]">
-                        <Table>
-                            <TableHeader className="sticky top-0 z-10 bg-card">
-                                <TableRow>
-                                    {tableData.headers.map((header, index) => (
-                                        <TableHead key={`${header}-${index}`} className="font-bold bg-muted/50 whitespace-nowrap">
-                                            {(header === 'Created At' || header === 'Resolved At') ? (
-                                                <DropdownMenu>
-                                                    <DropdownMenuTrigger asChild>
-                                                        <Button variant="ghost" className="pl-0 text-xs text-left font-bold" disabled={isProcessing}>
-                                                            <span className="flex items-center gap-1">
-                                                                {header}
-                                                                <Pencil className="h-3 w-3 text-muted-foreground" />
-                                                            </span>
-                                                        </Button>
-                                                    </DropdownMenuTrigger>
-                                                    <DropdownMenuContent>
-                                                        <DropdownMenuLabel>Date Format</DropdownMenuLabel>
-                                                        <DropdownMenuSeparator />
-                                                        <DropdownMenuRadioGroup value={dateFormats[header] || 'report'} onValueChange={(value) => handleDateFormatChange(header, value)}>
-                                                            <DropdownMenuRadioItem value="origin">Origin</DropdownMenuRadioItem>
-                                                            <DropdownMenuRadioItem value="jam">Time</DropdownMenuRadioItem>
-                                                            <DropdownMenuRadioItem value="report">Report</DropdownMenuRadioItem>
-                                                        </DropdownMenuRadioGroup>
-                                                    </DropdownMenuContent>
-                                                </DropdownMenu>
-                                            ) : header}
-                                        </TableHead>
-                                    ))}
-                                 </TableRow>
-                            </TableHeader>
-                            <TableBody>
-                                {tableData.rows.map((row, rowIndex) => (
-                                    <TableRow key={rowIndex} className="hover:bg-muted/50">
+                     <div className="flex flex-col sm:flex-row gap-2 w-full sm:w-auto">
+                        <Button onClick={handleCopyToClipboard} variant="outline" size="sm" className="w-full sm:w-auto" disabled={isProcessing}>
+                            {isCopied ? <Check className="mr-2 h-4 w-4 text-green-500" /> : <Copy className="mr-2 h-4 w-4" />}
+                            {isCopied ? 'Copied!' : 'Copy for Sheets/Excel'}
+                        </Button>
+                         <Button onClick={handleNavigateToReport} size="sm" className="w-full sm:w-auto bg-pink-500 hover:bg-pink-600 text-white" disabled={isProcessing || !tableData}>
+                            <BarChart className="mr-2 h-4 w-4" />
+                            Report Harian
+                        </Button>
+                    </div>
+                </div>
+            </CardHeader>
+            <CardContent>
+                <div ref={tableContainerRef} className="relative w-full overflow-auto rounded-md border h-[500px]">
+                    <Table>
+                        <TableHeader className="sticky top-0 z-10 bg-card">
+                            <TableRow>
+                                {tableData.headers.map((header, index) => (
+                                    <TableHead key={`${header}-${index}`} className="font-bold bg-muted/50 whitespace-nowrap">
+                                        {(header === 'Created At' || header === 'Resolved At') ? (
+                                            <DropdownMenu>
+                                                <DropdownMenuTrigger asChild>
+                                                    <Button variant="ghost" className="pl-0 text-xs text-left font-bold" disabled={isProcessing}>
+                                                        <span className="flex items-center gap-1">
+                                                            {header}
+                                                            <Pencil className="h-3 w-3 text-muted-foreground" />
+                                                        </span>
+                                                    </Button>
+                                                </DropdownMenuTrigger>
+                                                <DropdownMenuContent>
+                                                    <DropdownMenuLabel>Date Format</DropdownMenuLabel>
+                                                    <DropdownMenuSeparator />
+                                                    <DropdownMenuRadioGroup value={dateFormats[header] || 'report'} onValueChange={(value) => handleDateFormatChange(header, value)}>
+                                                        <DropdownMenuRadioItem value="origin">Origin</DropdownMenuRadioItem>
+                                                        <DropdownMenuRadioItem value="jam">Time</DropdownMenuRadioItem>
+                                                        <DropdownMenuRadioItem value="report">Report</DropdownMenuRadioItem>
+                                                    </DropdownMenuRadioGroup>
+                                                </DropdownMenuContent>
+                                            </DropdownMenu>
+                                        ) : header}
+                                    </TableHead>
+                                ))}
+                             </TableRow>
+                        </TableHeader>
+                         <TableBody style={{ height: `${totalHeight}px`, position: 'relative' }}>
+                            {virtualRows.map((virtualRow) => {
+                                const row = tableData.rows[virtualRow.index];
+                                return (
+                                    <TableRow
+                                        key={virtualRow.key}
+                                        data-index={virtualRow.index}
+                                        style={{
+                                            position: 'absolute',
+                                            top: 0,
+                                            left: 0,
+                                            width: '100%',
+                                            height: `${virtualRow.size}px`,
+                                            transform: `translateY(${virtualRow.start}px)`,
+                                        }}
+                                        className="flex items-center"
+                                    >
                                         {tableData.headers.map((header, headerIndex) => (
-                                            <TableCell key={`${header}-${headerIndex}-${rowIndex}`} className="text-xs">
+                                            <TableCell key={`${header}-${headerIndex}-${virtualRow.index}`} className={cn("text-xs h-full flex items-center p-2", header === "Title" ? "flex-1" : "w-32")}>
                                                {header === 'Status' ? (
-                                                    <Select value={String(row[header] ?? '')} onValueChange={(newStatus) => handleStatusChange(rowIndex, header, newStatus)} disabled={isProcessing}>
+                                                    <Select value={String(row[header] ?? '')} onValueChange={(newStatus) => handleStatusChange(virtualRow.index, header, newStatus)} disabled={isProcessing}>
                                                         <SelectTrigger className="w-[120px] h-8 text-xs">
                                                             <SelectValue placeholder="Select status" />
                                                         </SelectTrigger>
@@ -809,30 +886,27 @@ export function ImportFlow() {
                                                     <Input
                                                         type="text"
                                                         value={row[header] || ''}
-                                                        onChange={(e) => handleStatusChange(rowIndex, header, e.target.value)}
+                                                        onChange={(e) => handleStatusChange(virtualRow.index, header, e.target.value)}
                                                         className="w-[120px] h-8 text-xs"
                                                         disabled={isProcessing}
                                                     />
                                                 ) : (header === 'Created At' || header === 'Resolved At') ? (
                                                     formatDateTime(row[header], dateFormats[header] || 'report')
                                                 ) : (
-                                                    String(row[header] || '')
+                                                    <span className="truncate">{String(row[header] || '')}</span>
                                                 )}
                                             </TableCell>
                                         ))}
                                     </TableRow>
-                                ))}
-                            </TableBody>
-                        </Table>
-                    </div>
-                </CardContent>
-                <CardFooter>
-                    <p className="text-sm text-muted-foreground">Showing {tableData.rows.length} rows.</p>
-                </CardFooter>
-            </Card>
-          </>
-        )}
-      </div>
-    </div>
-  );
+                                );
+                            })}
+                        </TableBody>
+                    </Table>
+                </div>
+            </CardContent>
+            <CardFooter>
+                <p className="text-sm text-muted-foreground">Showing {tableData.rows.length} rows.</p>
+            </CardFooter>
+        </Card>
+    )
 }
