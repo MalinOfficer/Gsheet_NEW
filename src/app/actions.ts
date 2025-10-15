@@ -481,15 +481,16 @@ export async function updateSheetStatus(
     }
 }
 
-async function getSheetIdByName(sheets: any, spreadsheetId: string, sheetName: string) {
+async function getSheetProperties(sheets: any, spreadsheetId: string, sheetName: string) {
     const response = await sheets.spreadsheets.get({
         spreadsheetId,
-        fields: 'sheets.properties.sheetId,sheets.properties.title',
+        ranges: [sheetName],
+        fields: 'sheets.properties',
     });
     const sheet = response.data.sheets?.find(
         (s: any) => s.properties?.title?.trim().toLowerCase() === sheetName.trim().toLowerCase()
     );
-    return sheet?.properties?.sheetId ?? null;
+    return sheet?.properties ?? null;
 }
 
 export async function importToSheet(
@@ -507,32 +508,39 @@ export async function importToSheet(
     try {
         const sheets = getGoogleSheetsClient();
 
-        // 1. Get sheetId for Undo operation later
-        const sheetId = await getSheetIdByName(sheets, spreadsheetId, sheetName);
-        if (sheetId === null) {
+        // 1. Get sheet properties for sheetId and rowCount
+        const sheetProperties = await getSheetProperties(sheets, spreadsheetId, sheetName);
+        if (!sheetProperties || typeof sheetProperties.sheetId !== 'number') {
             return { error: `The target sheet named "${sheetName}" was not found in the spreadsheet.` };
         }
+        const sheetId = sheetProperties.sheetId;
+        const currentTotalRows = sheetProperties.gridProperties?.rowCount || 0;
 
-        // 2. Get last row data
+
+        // 2. Get last row data by reading the entire 'No' column (A)
         const lastRowResponse = await sheets.spreadsheets.values.get({
             spreadsheetId,
-            range: `${sheetName}!A:C`, // Read No
+            range: `${sheetName}!A:A`, // Read the entire 'No' column
             majorDimension: 'ROWS',
         });
-        const allRows = lastRowResponse.data.values || [];
+        const columnA = lastRowResponse.data.values || [];
         
-        let lastRowIndex = allRows.length;
+        let lastRowIndex = 0;
         let lastNo = 0;
         
-        if (allRows.length > 0) {
-           // Find the last row with a valid 'No' in column A
-            for (let i = allRows.length - 1; i >= 0; i--) {
-                const noValue = allRows[i][0];
-                if (noValue && !isNaN(Number(noValue))) {
-                    lastNo = parseInt(noValue, 10);
-                    break;
-                }
+        // Find the last row that has a numerical value in column A.
+        for (let i = columnA.length - 1; i >= 0; i--) {
+            const noValue = columnA[i][0];
+            if (noValue && !isNaN(Number(noValue))) {
+                lastNo = parseInt(noValue, 10);
+                lastRowIndex = i + 1; // 1-based index of the last row with a number
+                break;
             }
+        }
+        
+        // If the sheet is completely empty or has no numbers in column A, start from row 0.
+        if (lastRowIndex === 0) {
+            lastRowIndex = columnA.length;
         }
 
 
@@ -565,7 +573,26 @@ export async function importToSheet(
             };
         }
         
-        // 4. Prepare data for the append operation.
+        // 4. Check if we need to add more rows to the sheet
+        const requiredRowCount = lastRowIndex + newRows.length;
+        if (requiredRowCount > currentTotalRows) {
+            const rowsToAdd = requiredRowCount - currentTotalRows;
+            await sheets.spreadsheets.batchUpdate({
+                spreadsheetId,
+                requestBody: {
+                    requests: [{
+                        appendDimension: {
+                            sheetId: sheetId,
+                            dimension: 'ROWS',
+                            length: rowsToAdd
+                        }
+                    }]
+                }
+            });
+        }
+
+
+        // 5. Prepare data for the operation.
         const valuesToAppend = newRows.map((row, index) => {
             const createdAtStr = row['Created At'];
             const dateForNewRow = createdAtStr ? new Date(createdAtStr) : new Date();
@@ -580,11 +607,11 @@ export async function importToSheet(
             const dateStr = `${day}/${month}/${year}`;
             
             const monthStr = dateForNewRow.toLocaleString('id-ID', { month: 'long' });
-            const yearMonthDay = `${String(year).slice(2)}${month}${String(day).padStart(2, '0')}`;
-
-            const currentRowNumberInSheet = lastRowIndex + index + 1; // 1-based index for the new row
-            const ticketRowNumber = String(currentRowNumberInSheet - 2).padStart(5, '0');
-            const generatedTicketNumber = `TKT-${yearMonthDay}-${ticketRowNumber}`;
+            
+            const currentRowNumberInSheet = lastRowIndex + index + 1;
+            const ticketFormula = `=CONCATENATE("TKT-", TEXT(B${currentRowNumberInSheet}, "YYMMDD"), "-", TEXT(ROW()-2, "00000"))`;
+            const statusCase2Formula = `=IF(G${currentRowNumberInSheet}="solved","SOLVED",IF(OR(G${currentRowNumberInSheet}="L1",G${currentRowNumberInSheet}="L2",G${currentRowNumberInSheet}="L3",G${currentRowNumberInSheet}="PM"),"UNSOLVED",""))`;
+            const durationFormula = `=IF(R${currentRowNumberInSheet}="UNSOLVED", TODAY() - B${currentRowNumberInSheet}, "")`;
 
             const mainDataHeaders = [
                 'Client Name', 'Customer Name', 'Status', 'Kolom kosong1', 
@@ -594,39 +621,37 @@ export async function importToSheet(
             
             const mainData = mainDataHeaders.map(header => row[header] || '');
 
-            const status = mainData[2]; // 'Status' is at index 2 of mainData
-            let statusCase2 = '';
-            if (status === 'L1' || status === 'L2' || status === 'L3') {
-                statusCase2 = 'UNSOLVED';
-            } else if (status === 'Solved') {
-                statusCase2 = 'SOLVED';
-            }
-
             return [
                 lastNo + index + 1,        // A - NO
                 dateStr,                   // B - DATE
                 monthStr,                  // C - MONTH
-                generatedTicketNumber,     // D - TICKET NUMBER (Generated)
+                ticketFormula,             // D - TICKET NUMBER (Formula)
                 ...mainData,               // E-O (11 columns from JSON)
                 '', '',                    // P-Q - Empty
-                statusCase2,               // R - STATUS CASE 2
+                statusCase2Formula,        // R - STATUS CASE 2 (Formula)
                 '',                        // S - Empty
-                row['Ticket OP'] || ''     // T - Ticket OP
+                row['Ticket OP'] || '',    // T - Ticket OP
+                '',                        // U - Empty
+                durationFormula            // V - Umur Case/Hari (Formula)
             ];
         });
 
-        // 5. Use `append` to add the new rows.
-        const appendResult = await sheets.spreadsheets.values.append({
+        // 6. Use `update` instead of `append` to be resistant to filters.
+        const startRowForUpdate = lastRowIndex + 1;
+        const updateRange = `${sheetName}!A${startRowForUpdate}`;
+
+        const updateResult = await sheets.spreadsheets.values.update({
             spreadsheetId,
-            range: sheetName,
-            valueInputOption: 'USER_ENTERED',
+            range: updateRange,
+            valueInputOption: 'USER_ENTERED', // This is crucial for formulas
             requestBody: {
                 values: valuesToAppend,
             },
         });
 
-        // 6. Prepare data for the 'Undo' action
-        const updatedRange = appendResult.data.updates?.updatedRange;
+
+        // 7. Prepare data for the 'Undo' action
+        const updatedRange = updateResult.data.updatedRange;
         if (!updatedRange) {
             return {
                 success: true,
@@ -637,18 +662,7 @@ export async function importToSheet(
             };
         }
         
-        const rangeRegex = /!A(\d+):/; 
-        const matchResult = updatedRange.match(rangeRegex);
-        if (!matchResult || !matchResult[1]) {
-             return {
-                success: true,
-                message: `Import complete, but could not parse the updated range for undo action.`,
-                importedCount: newRows.length,
-                duplicateCount: duplicateRows.length,
-                duplicates: duplicateRows,
-            };
-        }
-        const startRowIndex = parseInt(matchResult[1], 10) -1; // 0-indexed for API
+        const startRowIndex = startRowForUpdate -1; // 0-indexed for API
 
         const undoData = {
             operationType: 'IMPORT',
@@ -988,3 +1002,10 @@ export async function fetchL3ReportData(sheetUrl: string) {
     
 
 
+
+
+
+
+    
+
+    

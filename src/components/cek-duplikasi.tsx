@@ -10,6 +10,7 @@ import { useToast } from "@/hooks/use-toast";
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { useVirtualizer } from '@tanstack/react-virtual';
+import { cn } from '@/lib/utils';
 
 declare const XLSX: any;
 
@@ -485,7 +486,7 @@ function ResultTable({ title, icon: Icon, count, data, type }: { title: string, 
     const rowVirtualizer = useVirtualizer({
         count: sortedData.length,
         getScrollElement: () => tableContainerRef.current,
-        estimateSize: () => 36, // Row height
+        estimateSize: () => 41,
         overscan: 5,
     });
     
@@ -504,49 +505,55 @@ function ResultTable({ title, icon: Icon, count, data, type }: { title: string, 
                           : type === 'emptyId' ? 'text-amber-600'
                           : 'text-sky-600';
 
+    const headers = type === 'duplicate' ? ['NIS/NISN', 'Nama', 'File', 'Sheet'] : ['Nama', 'File', 'Sheet'];
 
     return (
         <Card>
             <CardHeader>
-                <CardTitle className={`flex items-center gap-2 ${titleColorClass}`}>
+                <CardTitle className={cn('flex items-center gap-2', titleColorClass)}>
                     <Icon />
                     {titleText}
                 </CardTitle>
             </CardHeader>
             <CardContent>
-               <div ref={tableContainerRef} className="relative w-full overflow-auto rounded-md border h-[400px]">
-                   <Table>
+               <div ref={tableContainerRef} className="w-full overflow-auto rounded-md border h-[400px]">
+                   <Table style={{ tableLayout: 'fixed' }}>
+                       <colgroup>
+                           {type === 'duplicate' && <col style={{ width: '20%' }} />}
+                           <col style={{ width: type === 'duplicate' ? '30%' : '40%' }} />
+                           <col style={{ width: '30%' }} />
+                           <col style={{ width: '20%' }} />
+                       </colgroup>
                        <TableHeader className="sticky top-0 bg-card z-10">
                            <TableRow>
-                               {type === 'duplicate' && <TableHead>NIS/NISN</TableHead>}
-                               <TableHead>Nama</TableHead>
-                               <TableHead>File</TableHead>
-                               <TableHead>Sheet</TableHead>
+                               {headers.map(header => (
+                                   <TableHead key={header}>{header}</TableHead>
+                               ))}
                            </TableRow>
                        </TableHeader>
                        <TableBody style={{ height: `${totalHeight}px`, position: 'relative' }}>
                            {virtualRows.map((virtualRow) => {
-                                const item = sortedData[virtualRow.index];
-                                return (
-                                <TableRow 
-                                    key={virtualRow.key}
-                                    style={{
-                                        position: 'absolute',
-                                        top: 0,
-                                        left: 0,
-                                        width: '100%',
-                                        height: `${virtualRow.size}px`,
-                                        transform: `translateY(${virtualRow.start}px)`,
-                                    }}
-                                    className={rowBgClass}
-                                >
-                                   {type === 'duplicate' && <TableCell className="font-medium">{item.id}</TableCell>}
-                                   <TableCell>{item.nama}</TableCell>
-                                   <TableCell>{item.fileName}</TableCell>
-                                   <TableCell>{item.sheetName}</TableCell>
-                                </TableRow>
-                               )
-                            })}
+                               const item = sortedData[virtualRow.index];
+                               return (
+                               <TableRow 
+                                   key={virtualRow.key}
+                                   style={{
+                                       position: 'absolute',
+                                       top: 0,
+                                       left: 0,
+                                       width: '100%',
+                                       height: `${virtualRow.size}px`,
+                                       transform: `translateY(${virtualRow.start}px)`,
+                                   }}
+                                   className={rowBgClass}
+                               >
+                                  {type === 'duplicate' && <TableCell className="font-medium break-words">{item.id}</TableCell>}
+                                  <TableCell className="break-words">{item.nama}</TableCell>
+                                  <TableCell className="break-words">{item.fileName}</TableCell>
+                                  <TableCell className="break-words">{item.sheetName}</TableCell>
+                               </TableRow>
+                              )
+                           })}
                        </TableBody>
                    </Table>
                </div>
@@ -554,3 +561,5 @@ function ResultTable({ title, icon: Icon, count, data, type }: { title: string, 
         </Card>
     );
 }
+
+    

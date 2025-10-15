@@ -1,4 +1,5 @@
 
+
 "use client";
 
 import { useState, useTransition, useEffect, useContext, useCallback, useRef } from 'react';
@@ -28,7 +29,6 @@ import { Alert, AlertDescription, AlertTitle } from './ui/alert';
 import { AlertCircle } from 'lucide-react';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuRadioGroup, DropdownMenuRadioItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { formatDateTime, type DateFormat } from '@/lib/date-utils';
-import { ScrollArea } from './ui/scroll-area';
 
 
 const LOCAL_STORAGE_KEY_SHEET_URL = 'gsheetDashboardSheetUrl';
@@ -71,13 +71,14 @@ export function ImportFlow() {
   const [templateInput, setTemplateInput] = useState(DEFAULT_TEMPLATE);
   const [jsonError, setJsonError] = useState<string | null>(null);
   const [dateFormats, setDateFormats] = useState<Record<string, DateFormat>>({
-    'Created At': 'report',
-    'Resolved At': 'report',
+    'Created At': 'jam',
+    'Resolved At': 'jam',
   });
    const [isCopied, setIsCopied] = useState(false);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const destinationCardRef = useRef<HTMLDivElement>(null);
+  const hasScrolledRef = useRef(false);
   const router = useRouter();
   const [isImporting, startImporting] = useTransition();
   const [isUpdating, startUpdating] = useTransition();
@@ -110,20 +111,14 @@ export function ImportFlow() {
 
   // Effect for auto-scrolling
   useEffect(() => {
-    if (tableData && destinationCardRef.current) {
-        const mainContainer = destinationCardRef.current.closest('main');
-        if (mainContainer) {
-            const headerOffset = 80;
-            const elementPosition = destinationCardRef.current.offsetTop;
-            const offsetPosition = elementPosition - headerOffset;
-
-            mainContainer.scrollTo({
-                top: offsetPosition,
-                behavior: 'smooth',
-            });
-        }
+    if (tableData && destinationCardRef.current && !hasScrolledRef.current) {
+        destinationCardRef.current.scrollIntoView({
+            behavior: 'smooth',
+            block: 'start',
+        });
+        hasScrolledRef.current = true;
     }
-}, [tableData]);
+  }, [tableData]);
 
 
   const handleAnalyzeSheet = useCallback(async () => {
@@ -342,14 +337,6 @@ export function ImportFlow() {
     toast({ title: "URL Saved", description: "Google Sheet URL has been saved as your default." });
   };
   
-  const handleStatusChange = (rowIndex: number, header: string, value: string) => {
-    if (!tableData) return;
-    const newRows = [...tableData.rows];
-    newRows[rowIndex][header] = value;
-    setTableData({ ...tableData, rows: newRows });
-    setLastActionUndoData(null);
-};
-  
     const handleDateFormatChange = (header: string, format: string) => {
         if (format === 'origin' || format === 'jam' || format === 'report') {
             setDateFormats(prev => ({
@@ -407,6 +394,7 @@ export function ImportFlow() {
     startConverting(() => {
         setJsonError(null);
         setTableData(null);
+        hasScrolledRef.current = false; // Reset scroll flag
 
         if (!jsonInput.trim()) {
             setJsonError("JSON input cannot be empty.");
@@ -460,6 +448,15 @@ export function ImportFlow() {
             };
 
             processedRows.sort((a, b) => {
+                // Primary sort: by "Created At" date
+                const dateA = new Date(a['Created At']);
+                const dateB = new Date(b['Created At']);
+                
+                if (dateA.getTime() !== dateB.getTime()) {
+                    return dateA.getTime() - dateB.getTime();
+                }
+
+                // Secondary sort: by ticket number
                 const numA = extractTicketNumber(a.Title);
                 const numB = extractTicketNumber(b.Title);
                 if (numA === null && numB === null) return 0;
@@ -750,10 +747,10 @@ export function ImportFlow() {
             </Card>
 
             <PreviewTable
-                tableData={tableData}
+                initialData={tableData}
                 dateFormats={dateFormats}
                 isProcessing={isProcessing}
-                handleStatusChange={handleStatusChange}
+                onUndoDataChange={setLastActionUndoData}
                 handleDateFormatChange={handleDateFormatChange}
                 handleCopyToClipboard={handleCopyToClipboard}
                 isCopied={isCopied}
@@ -768,24 +765,41 @@ export function ImportFlow() {
 
 
 function PreviewTable({
-    tableData,
+    initialData,
     dateFormats,
     isProcessing,
-    handleStatusChange,
+    onUndoDataChange,
     handleDateFormatChange,
     handleCopyToClipboard,
     isCopied,
     handleNavigateToReport,
 } : {
-    tableData: TableData;
+    initialData: TableData;
     dateFormats: Record<string, DateFormat>;
     isProcessing: boolean;
-    handleStatusChange: (rowIndex: number, header: string, value: string) => void;
+    onUndoDataChange: (data: LastActionUndoData) => void;
     handleDateFormatChange: (header: string, format: string) => void;
     handleCopyToClipboard: () => void;
     isCopied: boolean;
     handleNavigateToReport: () => void;
 }) {
+    const { setTableData } = useContext(TableDataContext);
+    const [localTableData, setLocalTableData] = useState<TableData>(initialData);
+
+    useEffect(() => {
+        setLocalTableData(initialData);
+    }, [initialData]);
+
+    const handleStatusChange = (rowIndex: number, header: string, value: string) => {
+        const newRows = [...localTableData.rows];
+        newRows[rowIndex] = { ...newRows[rowIndex], [header]: value };
+        const newTableData = { ...localTableData, rows: newRows };
+        
+        setLocalTableData(newTableData);
+        // This is the key change: update the global state as well so export functions have the latest data
+        setTableData(newTableData);
+        onUndoDataChange(null);
+    };
 
     return (
          <Card className="shadow-lg mt-6">
@@ -802,7 +816,7 @@ function PreviewTable({
                             {isCopied ? <Check className="mr-2 h-4 w-4 text-green-500" /> : <Copy className="mr-2 h-4 w-4" />}
                             {isCopied ? 'Copied!' : 'Copy for Sheets/Excel'}
                         </Button>
-                         <Button onClick={handleNavigateToReport} size="sm" className="w-full sm:w-auto bg-pink-500 hover:bg-pink-600 text-white" disabled={isProcessing || !tableData}>
+                         <Button onClick={handleNavigateToReport} size="sm" className="w-full sm:w-auto bg-pink-500 hover:bg-pink-600 text-white" disabled={isProcessing || !localTableData}>
                             <BarChart className="mr-2 h-4 w-4" />
                             Report Harian
                         </Button>
@@ -810,15 +824,15 @@ function PreviewTable({
                 </div>
             </CardHeader>
              <CardContent>
-                <ScrollArea className="w-full h-[500px] border rounded-md">
+                <div className="overflow-auto w-full h-[500px] border rounded-md">
                     <div className="relative">
-                        <table className="w-full caption-bottom text-sm" style={{ minWidth: '1800px' }}>
+                        <table className="table-fixed" style={{ minWidth: '1800px' }}>
                             <thead>
                                 <tr className="border-b transition-colors hover:bg-muted/50">
-                                    {tableData.headers.map((header, index) => (
+                                    {localTableData.headers.map((header, index) => (
                                         <th 
                                           key={`${header}-${index}`} 
-                                          className="h-12 px-4 text-left align-middle font-medium text-muted-foreground bg-muted/50 whitespace-nowrap p-2 sticky top-0 z-10 border-b border-r"
+                                          className="h-12 px-4 text-left align-middle font-medium text-muted-foreground whitespace-nowrap p-2 border-b border-r sticky top-0 bg-muted z-10"
                                           style={{ width: header === 'Title' ? '384px' : '128px' }}
                                         >
                                             {(header === 'Created At' || header === 'Resolved At') ? (
@@ -847,9 +861,9 @@ function PreviewTable({
                                  </tr>
                             </thead>
                              <tbody>
-                                {tableData.rows.map((row, rowIndex) => (
+                                {localTableData.rows.map((row, rowIndex) => (
                                     <tr key={rowIndex} className="border-b transition-colors hover:bg-muted/50 data-[state=selected]:bg-muted">
-                                        {tableData.headers.map((header, headerIndex) => (
+                                        {localTableData.headers.map((header, headerIndex) => (
                                             <td 
                                                 key={`${header}-${headerIndex}-${rowIndex}`} 
                                                 className="align-middle p-1 border-r"
@@ -887,10 +901,10 @@ function PreviewTable({
                             </tbody>
                         </table>
                     </div>
-                </ScrollArea>
+                </div>
             </CardContent>
             <CardFooter className="pt-4">
-                <p className="text-sm text-muted-foreground">Showing {tableData.rows.length} rows.</p>
+                <p className="text-sm text-muted-foreground">Showing {localTableData.rows.length} rows.</p>
             </CardFooter>
         </Card>
     );
@@ -904,4 +918,12 @@ function PreviewTable({
     
 
     
+
+
+
+
+
+
+
+
 
