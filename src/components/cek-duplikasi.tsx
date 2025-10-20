@@ -1,11 +1,11 @@
 
+
 "use client";
 
-import { useState, useCallback, useTransition, useMemo, useRef } from 'react';
+import { useState, useCallback, useTransition, useMemo, useRef, DragEvent } from 'react';
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from "@/components/ui/card";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Upload, Loader2, CheckCircle2, AlertTriangle, Trash2, Search, FileWarning, Copy, Check, Cake, XCircle } from 'lucide-react';
+import { Upload, Loader2, CheckCircle2, AlertTriangle, Trash2, Search, FileWarning, Copy, Check, Cake, XCircle, FileText, X } from 'lucide-react';
 import { useToast } from "@/hooks/use-toast";
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
@@ -15,7 +15,8 @@ import { cn } from '@/lib/utils';
 declare const XLSX: any;
 
 type StudentRecord = {
-    id: string; // Combined NIS or NISN
+    type: 'NIS' | 'NISN' | 'ID Kosong' | 'TTL Kosong';
+    value: string;
     nama: string;
     fileName: string;
     sheetName: string;
@@ -32,6 +33,7 @@ type HeaderInfo = {
 type FileData = {
     name: string;
     buffer: ArrayBuffer;
+    size: number;
 };
 
 
@@ -55,43 +57,85 @@ export function CekDuplikasi() {
     const { toast } = useToast();
     const [isCopied, setIsCopied] = useState(false);
     const fileInputRef = useRef<HTMLInputElement>(null);
+    const [isDragging, setIsDragging] = useState(false);
 
-    const handleFileChange = async (event: React.ChangeEvent<HTMLInputElement>) => {
-        if (event.target.files) {
-            setDuplicates([]);
-            setEmptyIdRecords([]);
-            setEmptyDobRecords([]);
-            setHasChecked(false);
-            setProcessedFileCount(0);
-            
-            try {
-                const filePromises = Array.from(event.target.files).map(file => {
-                    return new Promise<FileData>((resolve, reject) => {
-                        const reader = new FileReader();
-                        reader.onload = (e) => {
-                            if (e.target?.result instanceof ArrayBuffer) {
-                                resolve({ name: file.name, buffer: e.target.result });
-                            } else {
-                                reject(new Error('Failed to read file as ArrayBuffer.'));
-                            }
-                        };
-                        reader.onerror = (e) => reject(new Error('File reading error: ' + reader.error));
-                        reader.readAsArrayBuffer(file);
+
+    const processFiles = useCallback(async (files: FileList | null) => {
+        if (!files || files.length === 0) return;
+
+        setDuplicates([]);
+        setEmptyIdRecords([]);
+        setEmptyDobRecords([]);
+        setHasChecked(false);
+        setProcessedFileCount(0);
+
+        try {
+            const filePromises = Array.from(files).map(file => {
+                if (!file.type.includes('spreadsheet') && !file.name.endsWith('.xls') && !file.name.endsWith('.xlsx')) {
+                    toast({
+                        variant: 'destructive',
+                        title: 'Invalid File Type',
+                        description: `Skipping '${file.name}' as it is not a valid Excel file.`,
                     });
-                });
+                    return Promise.resolve(null);
+                }
 
-                const allFilesData = await Promise.all(filePromises);
-                setFilesData(allFilesData);
-
-            } catch (error) {
-                 toast({
-                    variant: 'destructive',
-                    title: 'Error Reading Files',
-                    description: `Could not read the selected files. Please try again. Error: ${error instanceof Error ? error.message : 'Unknown'}`,
+                return new Promise<FileData>((resolve, reject) => {
+                    const reader = new FileReader();
+                    reader.onload = (e) => {
+                        if (e.target?.result instanceof ArrayBuffer) {
+                            resolve({ name: file.name, buffer: e.target.result, size: file.size });
+                        } else {
+                            reject(new Error('Failed to read file as ArrayBuffer.'));
+                        }
+                    };
+                    reader.onerror = (e) => reject(new Error('File reading error: ' + reader.error));
+                    reader.readAsArrayBuffer(file);
                 });
-            }
+            });
+
+            const allFilesData = (await Promise.all(filePromises)).filter((f): f is FileData => f !== null);
+            setFilesData(allFilesData);
+
+        } catch (error) {
+             toast({
+                variant: 'destructive',
+                title: 'Error Reading Files',
+                description: `Could not read the selected files. Please try again. Error: ${error instanceof Error ? error.message : 'Unknown'}`,
+            });
+        }
+    }, [toast]);
+
+    const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+        processFiles(event.target.files);
+    };
+
+    const handleDrop = (event: DragEvent<HTMLDivElement>) => {
+        event.preventDefault();
+        event.stopPropagation();
+        setIsDragging(false);
+        if (event.dataTransfer.files) {
+            processFiles(event.dataTransfer.files);
         }
     };
+
+    const handleDragOver = (event: DragEvent<HTMLDivElement>) => {
+        event.preventDefault();
+        event.stopPropagation();
+    };
+
+    const handleDragEnter = (event: DragEvent<HTMLDivElement>) => {
+        event.preventDefault();
+        event.stopPropagation();
+        setIsDragging(true);
+    };
+
+    const handleDragLeave = (event: DragEvent<HTMLDivElement>) => {
+        event.preventDefault();
+        event.stopPropagation();
+        setIsDragging(false);
+    };
+
 
     const findHeaderRow = (sheetData: any[][]): HeaderValidationResult => {
         let potentialHeaderRow = -1;
@@ -162,7 +206,11 @@ export function CekDuplikasi() {
         startChecking(async () => {
             setHasChecked(true);
             setProcessedFileCount(0);
-            const idMap = new Map<string, { nama: string, fileName: string, sheetName: string }[]>();
+            
+            type RecordInfo = { nama: string; fileName: string; sheetName: string };
+            const nisMap = new Map<string, RecordInfo[]>();
+            const nisnMap = new Map<string, RecordInfo[]>();
+            
             const foundEmptyId: StudentRecord[] = [];
             const foundEmptyDob: StudentRecord[] = [];
             let filesProcessed = 0;
@@ -205,30 +253,33 @@ export function CekDuplikasi() {
                             const nisnValue = nisnIndex !== -1 ? String(row[nisnIndex] || '').trim() : '';
                             const namaValue = String(row[namaIndex] || '').trim();
                             
-                            const id = nisValue || nisnValue;
-                             
-                            const isIdEmpty = !id || !/\d/.test(id);
+                            const recordInfo = { nama: namaValue, fileName: fileData.name, sheetName };
+
+                            const isIdEmpty = !nisValue && !nisnValue;
                             const isNamePresent = namaValue && namaValue.toLowerCase() !== 'nama';
                             
                             if (dobIndex !== -1) {
                                 const dobValue = row[dobIndex];
                                 const isDobEmpty = !dobValue || (typeof dobValue === 'string' && dobValue.startsWith('#'));
                                 if (isNamePresent && isDobEmpty) {
-                                    foundEmptyDob.push({ id: 'N/A', nama: namaValue, fileName: fileData.name, sheetName });
+                                    foundEmptyDob.push({ type: 'TTL Kosong', value: 'N/A', ...recordInfo });
                                 }
                             }
                             
                             if (isIdEmpty) {
                                 if (isNamePresent) {
-                                    foundEmptyId.push({ id: 'N/A', nama: namaValue, fileName: fileData.name, sheetName });
+                                    foundEmptyId.push({ type: 'ID Kosong', value: 'N/A', ...recordInfo });
                                 }
-                                continue; 
+                            } else {
+                                if (nisValue) {
+                                    if (!nisMap.has(nisValue)) nisMap.set(nisValue, []);
+                                    nisMap.get(nisValue)!.push(recordInfo);
+                                }
+                                if (nisnValue) {
+                                    if (!nisnMap.has(nisnValue)) nisnMap.set(nisnValue, []);
+                                    nisnMap.get(nisnValue)!.push(recordInfo);
+                                }
                             }
-                            
-                            if (!idMap.has(id)) {
-                                idMap.set(id, []);
-                            }
-                            idMap.get(id)?.push({ nama: namaValue, fileName: fileData.name, sheetName });
                         }
                     }
                      if (fileHasValidSheet) {
@@ -248,11 +299,14 @@ export function CekDuplikasi() {
             setProcessedFileCount(filesProcessed);
 
             const foundDuplicates: StudentRecord[] = [];
-            idMap.forEach((records, id) => {
+            nisMap.forEach((records, nis) => {
                 if (records.length > 1) {
-                    records.forEach(record => {
-                        foundDuplicates.push({ id, ...record });
-                    });
+                    records.forEach(record => foundDuplicates.push({ type: 'NIS', value: nis, ...record }));
+                }
+            });
+            nisnMap.forEach((records, nisn) => {
+                if (records.length > 1) {
+                    records.forEach(record => foundDuplicates.push({ type: 'NISN', value: nisn, ...record }));
                 }
             });
 
@@ -276,35 +330,34 @@ export function CekDuplikasi() {
 
     const summaryText = useMemo(() => {
         if (!hasChecked || isChecking) return "";
-
+    
         let summary = "";
-
+    
         // Duplicates summary
         const groupedDuplicates = duplicates.reduce((acc, curr) => {
-            const { id } = curr;
-            if (id) {
-                if (!acc[id]) acc[id] = [];
-                acc[id].push(curr);
-            }
+            const key = `${curr.type}:${curr.value}`;
+            if (!acc[key]) acc[key] = [];
+            acc[key].push(curr);
             return acc;
         }, {} as Record<string, StudentRecord[]>);
-
-        const duplicateEntries = Object.entries(groupedDuplicates);
+    
+        const duplicateEntries = Object.values(groupedDuplicates);
         if (duplicateEntries.length > 0) {
-            summary += "NIS/NISN yang terduplikasi:\n";
-            duplicateEntries.forEach(([id, records]) => {
-                const names = records.map(r => r.nama).join(' dan ');
+            summary += "Data yang terduplikasi:\n";
+            duplicateEntries.forEach((records) => {
+                const { type, value } = records[0];
+                const names = [...new Set(records.map(r => r.nama))].join(' dan ');
                 const sheetNames = [...new Set(records.map(r => r.sheetName))].join(', ');
-                summary += `- ${id} telah digunakan pada nama ${names} di sheet ${sheetNames}\n`;
+                summary += `- ${type} ${value} telah digunakan pada nama ${names} di sheet ${sheetNames}\n`;
             });
             summary += "\n";
         }
-
+    
         // Empty ID summary
         if (emptyIdRecords.length > 0) {
             summary += "Siswa dengan NIS/NISN Kosong:\n";
             emptyIdRecords.forEach(record => {
-                summary += `- ${record.nama} sheet ${record.sheetName}\n`;
+                summary += `- ${record.nama} di sheet ${record.sheetName}\n`;
             });
             summary += "\n";
         }
@@ -313,10 +366,10 @@ export function CekDuplikasi() {
         if (emptyDobRecords.length > 0) {
             summary += "Siswa dengan Tanggal Lahir Kosong:\n";
             emptyDobRecords.forEach(record => {
-                summary += `- ${record.nama} sheet ${record.sheetName}\n`;
+                summary += `- ${record.nama} di sheet ${record.sheetName}\n`;
             });
         }
-
+    
         return summary.trim() || "Tidak ada masalah ditemukan.";
     }, [duplicates, emptyIdRecords, emptyDobRecords, hasChecked, isChecking]);
 
@@ -363,10 +416,10 @@ export function CekDuplikasi() {
         }
 
         return (
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-start">
-                 <div className="space-y-6">
+            <div className="grid grid-cols-1 gap-6">
+                <div className="space-y-6">
                     {duplicates.length > 0 && (
-                        <ResultTable title="NIS/NISN Duplikat" icon={AlertTriangle} count={new Set(duplicates.map(d => d.id)).size} data={duplicates} type="duplicate" />
+                        <ResultTable title="Data Duplikat" icon={AlertTriangle} count={new Set(duplicates.map(d => `${d.type}:${d.value}`)).size} data={duplicates} type="duplicate" />
                     )}
 
                     {emptyIdRecords.length > 0 && (
@@ -380,7 +433,7 @@ export function CekDuplikasi() {
                 </div>
 
                 {summaryText && (
-                    <div className="lg:sticky lg:top-24">
+                    <div>
                         <Card>
                             <CardHeader>
                                 <CardTitle>Summary</CardTitle>
@@ -405,6 +458,14 @@ export function CekDuplikasi() {
             </div>
         );
     }
+    
+    const formatFileSize = (bytes: number) => {
+        if (bytes === 0) return '0 Bytes';
+        const k = 1024;
+        const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+        const i = Math.floor(Math.log(bytes) / Math.log(k));
+        return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+    };
 
     return (
         <div className="flex-1 bg-background text-foreground p-4 sm:p-6 md:p-8">
@@ -424,11 +485,21 @@ export function CekDuplikasi() {
                         </div>
                         <Button onClick={handleClear} variant="destructive" size="sm" disabled={isChecking || filesData.length === 0}>
                             <Trash2 className="mr-2 h-4 w-4"/>
-                            Clear
+                            Clear All
                         </Button>
                     </CardHeader>
                     <CardContent>
-                         <div className="w-full p-6 border-2 border-dashed rounded-lg">
+                        <div
+                            onDrop={handleDrop}
+                            onDragOver={handleDragOver}
+                            onDragEnter={handleDragEnter}
+                            onDragLeave={handleDragLeave}
+                            onClick={() => fileInputRef.current?.click()}
+                            className={cn(
+                                "w-full p-6 border-2 border-dashed rounded-lg transition-colors duration-200 cursor-pointer",
+                                isDragging ? "border-primary bg-primary/10" : "border-border hover:border-primary/50"
+                            )}
+                        >
                             <Input
                                 ref={fileInputRef}
                                 type="file"
@@ -436,20 +507,45 @@ export function CekDuplikasi() {
                                 onChange={handleFileChange}
                                 className="hidden"
                                 id="file-upload"
-                                accept=".xlsx, .xls"
+                                accept=".xlsx, .xls, application/vnd.ms-excel, application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                                disabled={isChecking}
                             />
-                             <label htmlFor="file-upload" className="cursor-pointer">
-                                <Button asChild variant="outline" disabled={isChecking} className="pointer-events-none">
-                                    <span>
-                                        <Upload className="mr-2 h-4 w-4" />
-                                        {filesData.length > 0 ? `Selected ${filesData.length} files` : 'Select Files'}
-                                    </span>
-                                </Button>
-                             </label>
-                            {filesData.length > 0 && (
-                                <ul className="mt-4 text-xs text-muted-foreground list-disc pl-5">
-                                    {filesData.map(f => <li key={f.name}>{f.name}</li>)}
-                                </ul>
+                            {filesData.length === 0 ? (
+                                <div className="flex flex-col items-center justify-center text-center text-muted-foreground">
+                                    <Upload className="w-10 h-10 mb-2" />
+                                    <p className="font-semibold">Click to browse or drag and drop files here</p>
+                                    <p className="text-xs mt-1">Supports .xlsx and .xls</p>
+                                </div>
+                            ) : (
+                                <div>
+                                    <p className="font-semibold mb-3 text-center sm:text-left">Selected Files:</p>
+                                    <div className="space-y-2">
+                                        {filesData.map((file, index) => (
+                                            <div key={index} className="flex items-center justify-between p-2 rounded-md bg-muted/50 text-sm">
+                                                <div className="flex items-center gap-3">
+                                                    <FileText className="h-5 w-5 text-muted-foreground" />
+                                                    <div className='flex flex-col'>
+                                                        <span className="font-medium text-foreground truncate">{file.name}</span>
+                                                        <span className='text-xs text-muted-foreground'>{formatFileSize(file.size)}</span>
+                                                    </div>
+                                                </div>
+                                                <Button
+                                                    variant="ghost"
+                                                    size="icon"
+                                                    className="h-6 w-6"
+                                                    onClick={(e) => {
+                                                        e.stopPropagation();
+                                                        setFilesData(filesData.filter((_, i) => i !== index));
+                                                    }}
+                                                    disabled={isChecking}
+                                                >
+                                                    <X className="h-4 w-4" />
+                                                </Button>
+                                            </div>
+                                        ))}
+                                    </div>
+                                    <p className="text-center text-xs text-muted-foreground mt-4">Click area to add more files.</p>
+                                </div>
                             )}
                         </div>
                     </CardContent>
@@ -479,9 +575,11 @@ export function CekDuplikasi() {
 
 function ResultTable({ title, icon: Icon, count, data, type }: { title: string, icon: React.ElementType, count: number, data: StudentRecord[], type: 'duplicate' | 'emptyId' | 'emptyDob' }) {
     const tableContainerRef = useRef<HTMLDivElement>(null);
+    
     const sortedData = useMemo(() => {
-        return [...data].sort((a, b) => (a.id || a.nama).localeCompare(b.id || b.nama));
+        return [...data].sort((a, b) => (a.nama || '').localeCompare(b.nama || ''));
     }, [data]);
+    
 
     const rowVirtualizer = useVirtualizer({
         count: sortedData.length,
@@ -494,7 +592,7 @@ function ResultTable({ title, icon: Icon, count, data, type }: { title: string, 
     const totalHeight = rowVirtualizer.getTotalSize();
 
     let titleText = title;
-    if (type === 'duplicate') titleText = `${title} (${count} ID)`;
+    if (type === 'duplicate') titleText = `${title} (${count} ID unik)`;
     if (type === 'emptyId' || type === 'emptyDob') titleText = `${title} (${count} Siswa)`;
 
     const rowBgClass = type === 'duplicate' ? 'bg-destructive/10' 
@@ -505,7 +603,14 @@ function ResultTable({ title, icon: Icon, count, data, type }: { title: string, 
                           : type === 'emptyId' ? 'text-amber-600'
                           : 'text-sky-600';
 
-    const headers = type === 'duplicate' ? ['NIS/NISN', 'Nama', 'File', 'Sheet'] : ['Nama', 'File', 'Sheet'];
+    const headers = useMemo(() => type === 'duplicate' 
+        ? ['Jenis Duplikat', 'Nama', 'File', 'Sheet'] 
+        : ['Nama', 'File', 'Sheet'], [type]);
+    
+    const columnWidths = useMemo(() => type === 'duplicate' 
+        ? ['25%', '30%', '25%', '20%'] 
+        : ['40%', '40%', '20%'], [type]);
+
 
     return (
         <Card>
@@ -517,25 +622,25 @@ function ResultTable({ title, icon: Icon, count, data, type }: { title: string, 
             </CardHeader>
             <CardContent>
                <div ref={tableContainerRef} className="w-full overflow-auto rounded-md border h-[400px]">
-                   <Table style={{ tableLayout: 'fixed' }}>
-                       <colgroup>
-                           {type === 'duplicate' && <col style={{ width: '20%' }} />}
-                           <col style={{ width: type === 'duplicate' ? '30%' : '40%' }} />
-                           <col style={{ width: '30%' }} />
-                           <col style={{ width: '20%' }} />
-                       </colgroup>
-                       <TableHeader className="sticky top-0 bg-card z-10">
-                           <TableRow>
-                               {headers.map(header => (
-                                   <TableHead key={header}>{header}</TableHead>
-                               ))}
-                           </TableRow>
-                       </TableHeader>
-                       <TableBody style={{ height: `${totalHeight}px`, position: 'relative' }}>
-                           {virtualRows.map((virtualRow) => {
-                               const item = sortedData[virtualRow.index];
-                               return (
-                               <TableRow 
+                   <div style={{ height: `${totalHeight}px`, position: 'relative' }}>
+                       {/* Header */}
+                       <div className="flex sticky top-0 bg-card z-10 font-medium text-muted-foreground text-sm border-b">
+                           {headers.map((header, index) => (
+                               <div key={header} style={{ width: columnWidths[index] }} className="p-4 text-left">
+                                   {header}
+                               </div>
+                           ))}
+                       </div>
+
+                       {/* Virtualized Rows */}
+                       {virtualRows.map((virtualRow) => {
+                           const item = sortedData[virtualRow.index];
+                           const cells = type === 'duplicate' 
+                               ? [`${item.type}: ${item.value}`, item.nama, item.fileName, item.sheetName]
+                               : [item.nama, item.fileName, item.sheetName];
+                           
+                           return (
+                               <div 
                                    key={virtualRow.key}
                                    style={{
                                        position: 'absolute',
@@ -543,23 +648,30 @@ function ResultTable({ title, icon: Icon, count, data, type }: { title: string, 
                                        left: 0,
                                        width: '100%',
                                        height: `${virtualRow.size}px`,
-                                       transform: `translateY(${virtualRow.start}px)`,
+                                       transform: `translateY(${virtualRow.start + 49}px)`, // +49px to offset for header height
                                    }}
-                                   className={rowBgClass}
+                                   className={cn("flex items-center text-sm border-b", rowBgClass)}
                                >
-                                  {type === 'duplicate' && <TableCell className="font-medium break-words">{item.id}</TableCell>}
-                                  <TableCell className="break-words">{item.nama}</TableCell>
-                                  <TableCell className="break-words">{item.fileName}</TableCell>
-                                  <TableCell className="break-words">{item.sheetName}</TableCell>
-                               </TableRow>
-                              )
-                           })}
-                       </TableBody>
-                   </Table>
+                                  {cells.map((cellContent, cellIndex) => (
+                                      <div 
+                                        key={cellIndex} 
+                                        style={{ width: columnWidths[cellIndex] }}
+                                        className="p-4 break-words"
+                                      >
+                                          {cellContent}
+                                      </div>
+                                  ))}
+                               </div>
+                           );
+                       })}
+                   </div>
                </div>
             </CardContent>
         </Card>
     );
 }
+    
+
 
     
+

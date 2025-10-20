@@ -10,13 +10,16 @@ import path from 'path';
 const projectFilesForAction = [
   // File konfigurasi root
   "README.md",
-  ".gitignore",
-  "postcss.config.js",
-  "components.json",
   "next.config.ts",
   "package.json",
+  "postcss.config.js",
   "tailwind.config.ts",
   "tsconfig.json",
+  "components.json",
+  "next-env.d.ts",
+
+  // Folder Public
+  "public/placeholder.txt",
 
   // Struktur Aplikasi & Halaman Utama
   "src/app/layout.tsx",
@@ -28,6 +31,7 @@ const projectFilesForAction = [
   "src/app/data-weaver/page.tsx",
   "src/app/settings/page.tsx",
   "src/app/code-viewer/page.tsx",
+  "src/app/api-qiscus/page.tsx",
 
   // Komponen Utama (logika untuk setiap halaman)
   "src/components/import-flow.tsx",
@@ -36,12 +40,13 @@ const projectFilesForAction = [
   "src/components/cek-duplikasi.tsx",
   "src/components/data-weaver.tsx",
   "src/components/layout/client-layout.tsx",
+  "src/components/api-qiscus.tsx",
+
 
   // Aksi & Logika Server
   "src/app/actions.ts",
   "src/lib/utils.ts",
   "src/lib/date-utils.ts",
-  "src/lib/gcp-credentials.json",
 
   // Manajemen State (Konteks & Provider)
   "src/store/store-provider.tsx",
@@ -127,6 +132,49 @@ export async function getProjectFileContents() {
     } catch (error) {
         console.error("Failed to get project file contents:", error);
         return { success: false, error: "Gagal mengambil file proyek. Silakan coba lagi." };
+    }
+}
+
+export async function syncQiscusToSheet(appCode: string, secretKey: string, sheetUrl: string) {
+    if (!appCode || !secretKey) {
+        return { error: 'Qiscus App Code and Secret Key are required.' };
+    }
+
+    const webhookUrl = 'https://go-rest.pintro.id/api/webhook/tickets';
+
+    try {
+        const response = await fetch(webhookUrl, {
+            method: 'GET', // Or 'POST' if the API expects that
+            headers: {
+                'Content-Type': 'application/json',
+                'QISCUS-SDK-APP-ID': appCode,
+                'QISCUS-SDK-SECRET': secretKey,
+            },
+        });
+
+        if (!response.ok) {
+            const errorText = await response.text();
+            // Try to parse as JSON, but fall back to raw text if it fails
+            let errorDetail = errorText;
+            try {
+                const errorJson = JSON.parse(errorText);
+                errorDetail = errorJson.message || JSON.stringify(errorJson);
+            } catch (e) {
+                // Not a JSON response, use the raw text
+            }
+            throw new Error(`HTTP error! status: ${response.status}, message: ${errorDetail}`);
+        }
+
+        const data = await response.json();
+
+        // ** NEXT STEP: Parse the 'data' and sync it to Google Sheets **
+        // For now, we just confirm that we can fetch it.
+        
+        return { success: true, message: 'Successfully fetched data from Qiscus API. Sync to GSheet is the next step.' };
+
+    } catch (error: any) {
+        console.error('Failed to sync data from Qiscus:', error);
+        return { error: error.message || 'An unknown error occurred during sync.' };
     }
 }
 
@@ -785,82 +833,114 @@ export async function undoLastAction(
     }
 }
 
-export async function mergeFilesOnServer(fileAData: any, fileBData: any, mergeKey: string) {
-    // Helper to find header case-insensitively
-    const findHeader = (headers: string[] | undefined, key: string) => {
+export async function mergeFilesOnServer(
+    fileAData: any,
+    fileBData: any,
+    editMode: 'nisn' | 'year' | 'nis' | null
+) {
+    if (!fileAData?.rows || !fileBData?.rows || !editMode) {
+        return { error: "Missing file data or edit mode." };
+    }
+
+    const findHeader = (headers: string[] | undefined, keys: string[]) => {
         if (!headers) return undefined;
-        return headers.find(h => h.toLowerCase() === key.toLowerCase());
+        const lowerKeys = keys.map(k => k.toLowerCase());
+        return headers.find(h => lowerKeys.includes(h.toLowerCase()));
     };
+
+    const normalizeName = (name: any): string => {
+        if (typeof name !== 'string') return '';
+        return name.toLowerCase().trim().replace(/[.,\/#!$%\^&\*;:{}=\-_`~()]/g, "").replace(/\s{2,}/g, " ");
+    };
+
+    const nameHeaderKeys = ['nama', 'name', 'username'];
+    const fileANameKey = findHeader(fileAData.headers, nameHeaderKeys);
+    if (!fileANameKey) return { error: `Required 'Name' column not found in Source File.` };
     
-    // Validate required data and headers
-    if (!fileAData?.rows || !fileBData?.rows || !mergeKey) {
-        return { mergedRows: [], unmatchedRowsB: fileBData?.rows || [], error: "Missing file data or merge key." };
-    }
+    const fileBNameKey = findHeader(fileBData.headers, nameHeaderKeys);
+    if (!fileBNameKey) return { error: `Required 'Name' column not found in ID File.` };
 
-    const fileAMergeKey = findHeader(fileAData.headers, mergeKey);
-    const fileBMergeKey = findHeader(fileBData.headers, mergeKey);
-    const nisnHeaderA = findHeader(fileAData.headers, 'nisn');
-
-    if (!fileAMergeKey || !fileBMergeKey) {
-        return { 
-            mergedRows: [], 
-            unmatchedRowsB: fileBData.rows,
-            error: `Merge key "${mergeKey}" not found in one or both files.`
-        };
+    const eliminationKeys: Record<typeof editMode, string[]> = {
+        nisn: ['nisn'],
+        nis: ['nis'],
+        year: ['year', 'tahun ajaran']
+    };
+    const columnToCheck = findHeader(fileBData.headers, eliminationKeys[editMode]);
+     if (!columnToCheck) {
+         return { error: `Required column for this mode ('${eliminationKeys[editMode].join("' or '")}') not found in ID File.` };
     }
-     if (!nisnHeaderA) {
-        return { 
-            mergedRows: [], 
-            unmatchedRowsB: fileBData.rows,
-            error: `Required "NISN" header not found in File A.`
-        };
-    }
+    
+    // --- Start of New Logic ---
 
-    // Create a map of File A for efficient lookups.
-    // Key: lowercase mergeKey value. Value: Array of rows from File A that match the key.
-    const fileAMap = new Map<string, any[]>();
-    for (const rowA of fileAData.rows) {
-        const key = String(rowA[fileAMergeKey] || '').toLowerCase().trim();
-        const nisnValue = String(rowA[nisnHeaderA] || '').trim();
-        
-        // Only add to map if the key is valid and it has a NISN.
-        if (key && nisnValue) { 
-            if (!fileAMap.has(key)) {
-                fileAMap.set(key, []);
-            }
-            // Add the row to the array for that key. We'll handle multiple matches later.
-            fileAMap.get(key)?.push(rowA);
+    // 1. Filter File B to only include rows with a valid name.
+    const validFileBRows = fileBData.rows.filter((row: any) => {
+        const name = row[fileBNameKey];
+        return name && typeof name === 'string' && name.trim() !== '';
+    });
+
+    // 2. Identify rows in File B that already have data and should be eliminated.
+    const namesToEliminate = new Set<string>();
+    validFileBRows.forEach((row: any) => {
+        const valueInB = row[columnToCheck];
+        const hasExistingValue = valueInB !== null && valueInB !== undefined && String(valueInB).trim() !== '';
+        if (hasExistingValue) {
+            namesToEliminate.add(normalizeName(row[fileBNameKey]));
         }
-    }
+    });
 
+    // 3. Create a map of clean File B rows for matching.
+    const fileBMap = new Map<string, any>();
+    validFileBRows.forEach((row: any) => {
+        const normalizedName = normalizeName(row[fileBNameKey]);
+        if (!namesToEliminate.has(normalizedName)) {
+            fileBMap.set(normalizedName, row);
+        }
+    });
+
+    // 4. Iterate through File A and perform matching.
     const mergedRows: any[] = [];
-    const unmatchedRowsB: any[] = [];
-    
-    for (const rowB of fileBData.rows) {
-        const key = String(rowB[fileBMergeKey] || '').toLowerCase().trim();
-        let matchFound = false;
+    const unmatchedFileA: any[] = [];
+    const usedInMatch_B_Names = new Set<string>();
 
-        if (key && fileAMap.has(key)) {
-            const potentialMatches = fileAMap.get(key) || [];
-            // For simplicity, we take the first valid match.
-            // More complex logic could be added here to handle multiple matches if needed.
-            const firstValidMatch = potentialMatches.find(match => match[nisnHeaderA]);
+    let existingCount = 0;
 
-            if (firstValidMatch) {
-                // Match found and it has a NISN.
-                const mergedRow = { ...firstValidMatch, ...rowB };
-                mergedRows.push(mergedRow);
-                matchFound = true;
-            }
+    for (const rowA of fileAData.rows) {
+        const normalizedNameA = normalizeName(rowA[fileANameKey]);
+        if (namesToEliminate.has(normalizedNameA)) {
+            existingCount++;
+            continue; // Skip this row from File A as its match in File B already has data.
         }
-        
-        if (!matchFound) {
-            // No match in File A OR the match in File A had no NISN
-            unmatchedRowsB.push(rowB);
+
+        const matchedRowB = fileBMap.get(normalizedNameA);
+        if (matchedRowB) {
+            mergedRows.push({ ...rowA, ...matchedRowB });
+            usedInMatch_B_Names.add(normalizeName(matchedRowB[fileBNameKey]));
+        } else {
+            unmatchedFileA.push(rowA);
         }
     }
     
-    return { mergedRows, unmatchedRowsB };
+    // 5. Determine unmatched rows from both files.
+    const matchedCount = mergedRows.length;
+    const totalInFileA = fileAData.rows.length;
+    const unmatchedACount = unmatchedFileA.length; // This is the real unmatched count from source
+
+    const unmatchedFileB = Array.from(fileBMap.values()).filter(rowB => {
+        const normalizedNameB = normalizeName(rowB[fileBNameKey]);
+        return !usedInMatch_B_Names.has(normalizedNameB);
+    });
+
+    return {
+        mergedRows,
+        unmatchedFileA,
+        unmatchedFileB,
+        summary: {
+            total: totalInFileA,
+            existing: existingCount,
+            matched: matchedCount,
+            unmatched: unmatchedACount,
+        }
+    };
 }
 
 
@@ -1005,6 +1085,26 @@ export async function fetchL3ReportData(sheetUrl: string) {
 
 
 
+
+    
+
+    
+
+    
+
+    
+
+
+  
+
+
+      
+
+
+
+    
+
+    
 
     
 
