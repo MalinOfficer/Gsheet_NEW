@@ -1,10 +1,10 @@
 
-import type {NextConfig} from 'next';
+import type { NextConfig } from 'next';
 
-const withPWA = require('next-pwa')({
+const withPWA = require('@ducanh2912/next-pwa').default({
   dest: 'public',
   register: true,
-  skipWaiting: true, // Ini adalah bagian penting, memaksa service worker baru untuk segera aktif
+  skipWaiting: true, // Force the new service worker to activate immediately
   disable: process.env.NODE_ENV === 'development',
 });
 
