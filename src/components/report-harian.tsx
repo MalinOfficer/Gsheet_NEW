@@ -10,6 +10,7 @@ import { ArrowLeft, Copy, Check, BarChart } from 'lucide-react';
 import { formatDateTime } from '@/lib/date-utils';
 import { TableDataContext, L3ReportData } from '@/store/table-data-context';
 import { useToast } from '@/hooks/use-toast';
+import { cn } from '@/lib/utils';
 
 function InitialState() {
   const router = useRouter();
@@ -42,7 +43,7 @@ function DailyReportCard() {
         setTodayDate(`${day}/${month}/${year}`);
     }, []);
 
-    const reportStats = useMemo(() => {
+    const reportTextForCopy = useMemo(() => {
         if (!tableData?.rows) return null;
 
         const rows = tableData.rows;
@@ -114,7 +115,7 @@ function DailyReportCard() {
           return caseDetail.trim();
         }
         
-        const reportText = `Case report ${todayDate} (update last entry time ${formattedLatestTime})
+        const reportText = `*Case report ${todayDate} (update last entry time ${formattedLatestTime})*
 
 Total cases: ${totalCases}
 Escalated L1: ${escalatedL1}
@@ -125,18 +126,25 @@ Solved: ${solved}
 Client Trend: ${trendingClient}
 Case Trend: ${trendingCase}
 
-Summary of unresolved case details:
+*Summary of unresolved case details:*
 ${notResolvedCases.map((item, i) => `${i + 1}. ${formatUnresolvedCase(item.clientName, item.title, item.status)}`).join('\n') || 'No unresolved cases.'}
 
-Solved cases:
+*Solved cases:*
 ${solvedCases.map((item, i) => `${i + 1}. ${formatSolvedCase(item.clientName, item.title)}`).join('\n') || 'No solved cases yet.'}
 `;
         return reportText.trim();
     }, [tableData, todayDate]);
 
+    const reportTextForDisplay = useMemo(() => {
+        if (!reportTextForCopy) return '';
+        // Convert markdown-style bold to HTML strong tags for display
+        return reportTextForCopy.replace(/\*(.*?)\*/g, '<strong>$1</strong>');
+    }, [reportTextForCopy]);
+
+
     const handleCopy = () => {
-        if (!reportStats) return;
-        navigator.clipboard.writeText(reportStats).then(() => {
+        if (!reportTextForCopy) return;
+        navigator.clipboard.writeText(reportTextForCopy).then(() => {
             toast({ title: "Copied to clipboard!" });
             setIsCopied(true);
             setTimeout(() => setIsCopied(false), 2000);
@@ -145,7 +153,7 @@ ${solvedCases.map((item, i) => `${i + 1}. ${formatSolvedCase(item.clientName, it
         });
     };
 
-    if (!reportStats) return null;
+    if (!reportTextForCopy) return null;
 
     return (
         <Card className="shadow-lg flex flex-col">
@@ -162,10 +170,9 @@ ${solvedCases.map((item, i) => `${i + 1}. ${formatSolvedCase(item.clientName, it
                 </CardDescription>
             </CardHeader>
             <CardContent className="flex-grow">
-                <Textarea
-                    readOnly
-                    value={reportStats}
-                    className="h-96 text-xs font-mono bg-muted/20"
+                 <div
+                    className="h-96 text-xs font-mono bg-muted/20 rounded-md border p-3 overflow-auto whitespace-pre-wrap"
+                    dangerouslySetInnerHTML={{ __html: reportTextForDisplay.replace(/\n/g, '<br />') }}
                 />
             </CardContent>
             <CardFooter />
@@ -178,15 +185,25 @@ function L3CaseReportCard() {
     const { toast } = useToast();
     const [isCopied, setIsCopied] = useState(false);
 
-    const reportText = useMemo(() => {
+    const reportTextForDisplay = useMemo(() => {
         if (!l3ReportData) return "Go to the Import Flow page and click 'Verify' to generate this report.";
         if (l3ReportData.error) return `Error: ${l3ReportData.error}`;
-        return l3ReportData.report || "No L3 cases found.";
+        if (!l3ReportData.report) return "No L3 cases found.";
+
+        // Replace markdown-style bold with HTML bold for display
+        return l3ReportData.report.replace(/\*(.*?)\*/g, '<strong>$1</strong>');
     }, [l3ReportData]);
 
+    const reportTextForCopy = useMemo(() => {
+        if (!l3ReportData?.report) return '';
+        // The report is already formatted for WhatsApp, so just use it as is.
+        return l3ReportData.report;
+    }, [l3ReportData]);
+
+
     const handleCopy = () => {
-        if (!l3ReportData || l3ReportData.error || !l3ReportData.report) return;
-        navigator.clipboard.writeText(l3ReportData.report).then(() => {
+        if (!reportTextForCopy) return;
+        navigator.clipboard.writeText(reportTextForCopy).then(() => {
             toast({ title: "Copied to clipboard!" });
             setIsCopied(true);
             setTimeout(() => setIsCopied(false), 2000);
@@ -210,11 +227,13 @@ function L3CaseReportCard() {
                 </CardDescription>
             </CardHeader>
             <CardContent className="flex-grow">
-                <Textarea
-                    readOnly
-                    value={reportText}
-                    className="h-96 text-xs font-mono bg-muted/20"
-                    placeholder="L3 report data will appear here..."
+                <div
+                    className={cn(
+                        "h-96 text-xs font-mono bg-muted/20 rounded-md border p-3 overflow-auto whitespace-pre-wrap",
+                        l3ReportData?.error && "text-destructive",
+                        !l3ReportData && "text-muted-foreground"
+                    )}
+                    dangerouslySetInnerHTML={{ __html: reportTextForDisplay.replace(/\n/g, '<br />') }}
                 />
             </CardContent>
         </Card>
