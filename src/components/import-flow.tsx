@@ -1,11 +1,12 @@
 
+
 "use client";
 
-import { useState, useTransition, useEffect, useContext, useCallback, useRef, MouseEvent } from 'react';
+import { useState, useTransition, useEffect, useContext, useCallback, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from "@/components/ui/card";
-import { Loader2, Upload, Import, DatabaseZap, Save, CheckCircle2, XCircle, ShieldCheck, Undo, Braces, Trash2, Pencil, Copy, Check, BarChart, FileCog } from 'lucide-react';
+import { Loader2, Upload, Import, DatabaseZap, Save, CheckCircle2, XCircle, ShieldCheck, Undo, Braces, Trash2, Pencil, Copy, Check, BarChart } from 'lucide-react';
 import { getSpreadsheetTitle, importToSheet, updateSheetStatus, getUpdatePreview, undoLastAction, fetchL3ReportData } from '@/app/actions';
 import { useToast } from '@/hooks/use-toast';
 import { Label } from './ui/label';
@@ -24,11 +25,10 @@ import {
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog"
 import { Textarea } from './ui/textarea';
-import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
+import { Alert, AlertDescription, AlertTitle } from './ui/alert';
 import { AlertCircle } from 'lucide-react';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuRadioGroup, DropdownMenuRadioItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { formatDateTime, type DateFormat } from '@/lib/date-utils';
-import { cn } from '@/lib/utils';
 
 
 const LOCAL_STORAGE_KEY_SHEET_URL = 'gsheetDashboardSheetUrl';
@@ -190,8 +190,6 @@ export function ImportFlow() {
                 title: "Preview Error",
                 description: `Failed to get update preview: ${result.error}`,
             });
-            setUpdatePreview([]);
-            setIsUpdateConfirmOpen(false);
             return;
         }
 
@@ -200,16 +198,9 @@ export function ImportFlow() {
             setIsUpdateConfirmOpen(true);
         } else {
             toast({
-                title: (
-                    <div className="flex items-center gap-2">
-                        <CheckCircle2 className="h-5 w-5 text-green-500" />
-                        Everything is Up-to-Date
-                    </div>
-                ),
-                description: "No changes were detected between your data and the Google Sheet.",
+                title: "No Changes Detected",
+                description: "All statuses and ticket OPs are already up-to-date in the Google Sheet.",
             });
-            setUpdatePreview([]);
-            setIsUpdateConfirmOpen(false);
         }
     });
   };
@@ -230,29 +221,27 @@ export function ImportFlow() {
         });
         setLastActionUndoData(null);
       } else {
-        if (result.updatedRows && result.updatedRows.length > 0) {
-            toast({
-              title: "Update Successful",
-              description: (
-                <div>
-                  <p className="mb-2">{result.message}</p>
-                  <div className="mt-2 text-xs">
-                    <p className="font-bold">Updated Cases:</p>
-                    <ul className="list-disc pl-5 max-h-40 overflow-y-auto">
-                      {result.updatedRows.map((item: { title: string, newStatus: string, newTicketOp: string }, index: number) => (
-                        <li key={index}>{item.title} {'→'} <strong>{item.newStatus} / {item.newTicketOp}</strong></li>
-                      ))}
-                    </ul>
-                  </div>
+        toast({
+          title: "Update Successful",
+          description: (
+            <div>
+              <p className="mb-2">{result.message}</p>
+              {result.updatedRows && result.updatedRows.length > 0 && (
+                <div className="mt-2 text-xs">
+                  <p className="font-bold">Updated Cases:</p>
+                  <ul className="list-disc pl-5 max-h-40 overflow-y-auto">
+                    {result.updatedRows.map((item: { title: string, newStatus: string, newTicketOp: string }, index: number) => (
+                      <li key={index}>{item.title} {'→'} <strong>{item.newStatus} / {item.newTicketOp}</strong></li>
+                    ))}
+                  </ul>
                 </div>
-              ),
-            });
+              )}
+            </div>
+          ),
+        });
+        if (result.updatedRows && result.updatedRows.length > 0) {
             setLastActionUndoData({ operationType: 'UPDATE', updatedRows: result.updatedRows });
         } else {
-            toast({
-                title: "Everything is Up-to-Date",
-                description: "No changes were detected, so no updates were made.",
-            });
             setLastActionUndoData(null);
         }
       }
@@ -400,13 +389,6 @@ export function ImportFlow() {
       });
       return res;
   };
-    
-    const toTitleCase = (str: string) => {
-        return str.replace(
-            /\w\S*/g,
-            (txt) => txt.charAt(0).toUpperCase() + txt.substring(1).toLowerCase()
-        );
-    };
 
   const handleConvert = () => {
     startConverting(() => {
@@ -428,7 +410,7 @@ export function ImportFlow() {
             }
 
             const flattenedData = data.map((item: any) => flattenJson(item));
-            const headers = templateInput.split(',').map(h => toTitleCase(h.trim()));
+            const headers = templateInput.split(',').map(h => h.trim());
             
             let processedRows = flattenedData.map(flatRow => {
                 const newRow: Record<string, any> = {};
@@ -723,41 +705,34 @@ export function ImportFlow() {
                     </AlertDialog>
                     
                     <AlertDialog open={isUpdateConfirmOpen} onOpenChange={setIsUpdateConfirmOpen}>
-                        <Button onClick={handleUpdatePreview} size="sm" className="bg-yellow-500 hover:bg-yellow-600 text-yellow-950" disabled={isProcessing || !isVerified}>
+                      <AlertDialogTrigger asChild>
+                         <Button onClick={handleUpdatePreview} size="sm" className="bg-yellow-500 hover:bg-yellow-600 text-yellow-950" disabled={isProcessing || !isVerified}>
                             {isPreviewing ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Mengecek...</> : <><DatabaseZap className="mr-2 h-4 w-4" />Update Status</>}
                         </Button>
+                      </AlertDialogTrigger>
                       <AlertDialogContent>
                         <AlertDialogHeader>
                            <AlertDialogTitle>Konfirmasi Pembaruan Status</AlertDialogTitle>
                            <div className="text-sm text-muted-foreground">
-                                {isPreviewing ? (
-                                    <div className="flex items-center justify-center p-8">
-                                        <Loader2 className="mr-2 h-6 w-6 animate-spin" />
-                                        <span>Mencari perubahan...</span>
-                                    </div>
-                                ) : (
-                                    <>
-                                        <p className='mb-2'>Apakah Anda yakin ingin memperbarui {updatePreview.length} kasus di sheet target?</p>
-                                        <div className="mt-2 text-xs max-h-48 overflow-y-auto border bg-muted/50 p-2 rounded-md space-y-1">
-                                            <p className="font-bold">Detail Perubahan:</p>
-                                            <ul className="list-disc pl-5">
-                                                {updatePreview.map((item, index) => (
-                                                  <li key={index} className='text-foreground'>
-                                                    {item.title}:
-                                                    {item.oldStatus !== item.newStatus && <span> Status: <span className='line-through'>{item.oldStatus || 'Kosong'}</span> {'→'} <strong>{item.newStatus}</strong></span>}
-                                                    {item.oldTicketOp !== item.newTicketOp && <span>, Ticket OP: <span className='line-through'>{item.oldTicketOp || 'Kosong'}</span> {'→'} <strong>{item.newTicketOp}</strong></span>}
-                                                    {item.newStatus === 'Solved' && item.oldCheckout !== item.newCheckout && <span>, Check Out: <strong>{formatDateTime(item.newCheckout, 'jam')}</strong></span>}
-                                                  </li>
-                                                ))}
-                                            </ul>
-                                        </div>
-                                    </>
-                                )}
+                                <p className='mb-2'>Apakah Anda yakin ingin memperbarui {updatePreview.length} kasus di sheet target?</p>
+                                <div className="mt-2 text-xs max-h-48 overflow-y-auto border bg-muted/50 p-2 rounded-md space-y-1">
+                                    <p className="font-bold">Detail Perubahan:</p>
+                                    <ul className="list-disc pl-5">
+                                        {updatePreview.map((item, index) => (
+                                          <li key={index} className='text-foreground'>
+                                            {item.title}:
+                                            {item.oldStatus !== item.newStatus && <span> Status: <span className='line-through'>{item.oldStatus || 'Kosong'}</span> {'→'} <strong>{item.newStatus}</strong></span>}
+                                            {item.oldTicketOp !== item.newTicketOp && <span>, Ticket OP: <span className='line-through'>{item.oldTicketOp || 'Kosong'}</span> {'→'} <strong>{item.newTicketOp}</strong></span>}
+                                            {item.newStatus === 'Solved' && item.oldCheckout !== item.newCheckout && <span>, Check Out: <strong>{formatDateTime(item.newCheckout, 'jam')}</strong></span>}
+                                          </li>
+                                        ))}
+                                    </ul>
+                                </div>
                             </div>
                         </AlertDialogHeader>
                         <AlertDialogFooter>
                           <AlertDialogCancel onClick={() => setUpdatePreview([])}>Batal</AlertDialogCancel>
-                          <AlertDialogAction onClick={handleConfirmUpdate} disabled={isUpdating || isPreviewing || updatePreview.length === 0}>
+                          <AlertDialogAction onClick={handleConfirmUpdate} disabled={isUpdating}>
                             {isUpdating ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Memperbarui...</> : "Ya, Lanjutkan Update"}
                           </AlertDialogAction>
                         </AlertDialogFooter>
@@ -811,60 +786,9 @@ function PreviewTable({
     const { setTableData } = useContext(TableDataContext);
     const [localTableData, setLocalTableData] = useState<TableData>(initialData);
 
-    const initialColumnWidths = useCallback(() => {
-        const widths: Record<string, number> = {};
-        initialData.headers.forEach(header => {
-            const lowerHeader = header.toLowerCase();
-            if (lowerHeader === 'title') widths[header] = 384;
-            else if (lowerHeader.includes('customer name')) widths[header] = 180;
-            else if (lowerHeader.includes('client name')) widths[header] = 160;
-            else if (lowerHeader.includes('ticket number')) widths[header] = 150;
-            else if (lowerHeader.includes('ticket category')) widths[header] = 150;
-            else if (lowerHeader.includes('kolom kosong')) widths[header] = 150;
-            else if (lowerHeader === 'status' || lowerHeader === 'ticket op') widths[header] = 100;
-            else widths[header] = 128;
-        });
-        return widths;
-    }, [initialData.headers]);
-
-    const [columnWidths, setColumnWidths] = useState<Record<string, number>>(initialColumnWidths);
-
-    const isResizing = useRef<string | null>(null);
-    const startX = useRef(0);
-    const startWidth = useRef(0);
-    
     useEffect(() => {
         setLocalTableData(initialData);
-        setColumnWidths(initialColumnWidths());
-    }, [initialData, initialColumnWidths]);
-
-
-    const handleResizeMouseDown = (header: string, e: MouseEvent) => {
-        isResizing.current = header;
-        startX.current = e.clientX;
-        startWidth.current = columnWidths[header];
-        document.body.style.cursor = 'col-resize';
-        document.body.style.userSelect = 'none';
-        window.addEventListener('mousemove', handleResizeMouseMove);
-        window.addEventListener('mouseup', handleResizeMouseUp);
-    };
-
-    const handleResizeMouseMove = useCallback((e: globalThis.MouseEvent) => {
-        if (!isResizing.current) return;
-        const currentWidth = startWidth.current + e.clientX - startX.current;
-        setColumnWidths(prev => ({
-            ...prev,
-            [isResizing.current as string]: Math.max(40, currentWidth) // Minimum width 40px
-        }));
-    }, []);
-
-    const handleResizeMouseUp = useCallback(() => {
-        isResizing.current = null;
-        document.body.style.cursor = '';
-        document.body.style.userSelect = '';
-        window.removeEventListener('mousemove', handleResizeMouseMove);
-        window.removeEventListener('mouseup', handleResizeMouseUp);
-    }, [handleResizeMouseMove]);
+    }, [initialData]);
 
     const handleStatusChange = (rowIndex: number, header: string, value: string) => {
         const newRows = [...localTableData.rows];
@@ -872,6 +796,7 @@ function PreviewTable({
         const newTableData = { ...localTableData, rows: newRows };
         
         setLocalTableData(newTableData);
+        // This is the key change: update the global state as well so export functions have the latest data
         setTableData(newTableData);
         onUndoDataChange(null);
     };
@@ -900,96 +825,94 @@ function PreviewTable({
             </CardHeader>
              <CardContent>
                 <div className="overflow-auto w-full h-[500px] border rounded-md">
-                    <table className="w-full" style={{ tableLayout: 'fixed', width: `${Object.values(columnWidths).reduce((a, b) => a + b, 64)}px` }}>
-                        <thead className="sticky top-0 z-20 bg-muted">
-                            <tr className="border-b transition-colors hover:bg-muted/50">
-                                <th
-                                    className="h-12 px-4 text-center align-middle font-medium text-muted-foreground whitespace-nowrap p-2 border-r sticky left-0 bg-muted z-10"
-                                    style={{ width: '64px', minWidth: '64px' }}
-                                >
-                                    No
-                                </th>
-                                {localTableData.headers.map((header, index) => (
-                                    <th 
-                                      key={`header-${header}-${index}`}
-                                      className="h-12 px-4 text-center align-middle font-medium text-muted-foreground whitespace-nowrap p-2 border-r relative"
-                                      style={{ width: columnWidths[header] || 128, minWidth: columnWidths[header] || 128 }}
+                    <div className="relative">
+                        <table className="table-fixed" style={{ minWidth: '1864px' }}>
+                            <thead>
+                                <tr className="border-b transition-colors hover:bg-muted/50">
+                                    <th
+                                        className="h-12 px-4 align-middle font-medium text-muted-foreground whitespace-nowrap p-2 border-b border-r sticky top-0 bg-muted z-10 flex items-center justify-center"
+                                        style={{ width: '64px' }}
                                     >
-                                        {(header === 'Created At' || header === 'Resolved At') ? (
-                                            <DropdownMenu>
-                                                <DropdownMenuTrigger asChild>
-                                                    <Button variant="ghost" className="p-0 h-auto text-sm font-medium text-muted-foreground hover:bg-transparent" disabled={isProcessing}>
-                                                        <span className="flex items-center justify-center gap-1 w-full">
-                                                            {header}
-                                                            <Pencil className="h-3 w-3" />
-                                                        </span>
-                                                    </Button>
-                                                </DropdownMenuTrigger>
-                                                <DropdownMenuContent>
-                                                    <DropdownMenuLabel>Date Format</DropdownMenuLabel>
-                                                    <DropdownMenuSeparator />
-                                                    <DropdownMenuRadioGroup value={dateFormats[header] || 'report'} onValueChange={(value) => handleDateFormatChange(header, value)}>
-                                                        <DropdownMenuRadioItem value="origin">Origin</DropdownMenuRadioItem>
-                                                        <DropdownMenuRadioItem value="jam">Time</DropdownMenuRadioItem>
-                                                        <DropdownMenuRadioItem value="report">Report</DropdownMenuRadioItem>
-                                                    </DropdownMenuRadioGroup>
-                                                </DropdownMenuContent>
-                                            </DropdownMenu>
-                                        ) : <span className="truncate block w-full">{header}</span>}
-                                        <div
-                                            onMouseDown={(e: MouseEvent) => handleResizeMouseDown(header, e)}
-                                            className="absolute top-0 right-0 h-full w-1.5 cursor-col-resize z-10"
-                                        />
+                                        No
                                     </th>
-                                ))}
-                             </tr>
-                        </thead>
-                         <tbody>
-                            {localTableData.rows.map((row, rowIndex) => (
-                                <tr key={rowIndex} className="border-b transition-colors hover:bg-muted/50 data-[state=selected]:bg-muted">
-                                    <td
-                                        className="align-middle p-1 border-r text-sm text-muted-foreground text-center sticky left-0 bg-background z-10"
-                                        style={{ width: '64px', minWidth: '64px' }}
-                                    >
-                                        {rowIndex + 1}
-                                    </td>
-                                    {localTableData.headers.map((header, headerIndex) => (
-                                        <td 
-                                            key={`cell-${header}-${headerIndex}-${rowIndex}`}
-                                            className="align-middle p-1 border-r"
-                                            style={{ width: columnWidths[header] || 128, minWidth: columnWidths[header] || 128 }}
+                                    {localTableData.headers.map((header, index) => (
+                                        <th 
+                                          key={`${header}-${index}`} 
+                                          className="h-12 px-4 text-left align-middle font-medium text-muted-foreground whitespace-nowrap p-2 border-b border-r sticky top-0 bg-muted z-10"
+                                          style={{ width: header === 'Title' ? '384px' : '128px' }}
                                         >
-                                           {header === 'Status' ? (
-                                                <Select value={String(row[header] ?? '')} onValueChange={(newStatus) => handleStatusChange(rowIndex, header, newStatus)} disabled={isProcessing}>
-                                                    <SelectTrigger className="w-full h-8 text-xs">
-                                                        <SelectValue placeholder="Select status" />
-                                                    </SelectTrigger>
-                                                    <SelectContent>
-                                                        <SelectItem value="L1">L1</SelectItem>
-                                                        <SelectItem value="L2">L2</SelectItem>
-                                                        <SelectItem value="L3">L3</SelectItem>
-                                                        <SelectItem value="Solved">Solved</SelectItem>
-                                                    </SelectContent>
-                                                </Select>
-                                            ) : header === 'Ticket Op' ? (
-                                                <Input
-                                                    type="text"
-                                                    value={row[header] || ''}
-                                                    onChange={(e) => handleStatusChange(rowIndex, header, e.target.value)}
-                                                    className="w-full h-8 text-xs"
-                                                    disabled={isProcessing}
-                                                />
-                                            ) : (header === 'Created At' || header === 'Resolved At') ? (
-                                                <span className="truncate block px-2">{formatDateTime(row[header], dateFormats[header] || 'report')}</span>
-                                            ) : (
-                                                <span className="truncate block px-2">{String(row[header] || '')}</span>
-                                            )}
-                                        </td>
+                                            {(header === 'Created At' || header === 'Resolved At') ? (
+                                                <DropdownMenu>
+                                                    <DropdownMenuTrigger asChild>
+                                                        <Button variant="ghost" className="pl-0 text-xs text-left font-bold" disabled={isProcessing}>
+                                                            <span className="flex items-center gap-1">
+                                                                {header}
+                                                                <Pencil className="h-3 w-3 text-muted-foreground" />
+                                                            </span>
+                                                        </Button>
+                                                    </DropdownMenuTrigger>
+                                                    <DropdownMenuContent>
+                                                        <DropdownMenuLabel>Date Format</DropdownMenuLabel>
+                                                        <DropdownMenuSeparator />
+                                                        <DropdownMenuRadioGroup value={dateFormats[header] || 'report'} onValueChange={(value) => handleDateFormatChange(header, value)}>
+                                                            <DropdownMenuRadioItem value="origin">Origin</DropdownMenuRadioItem>
+                                                            <DropdownMenuRadioItem value="jam">Time</DropdownMenuRadioItem>
+                                                            <DropdownMenuRadioItem value="report">Report</DropdownMenuRadioItem>
+                                                        </DropdownMenuRadioGroup>
+                                                    </DropdownMenuContent>
+                                                </DropdownMenu>
+                                            ) : <span className="truncate">{header}</span>}
+                                        </th>
                                     ))}
-                                </tr>
-                            ))}
-                        </tbody>
-                    </table>
+                                 </tr>
+                            </thead>
+                             <tbody>
+                                {localTableData.rows.map((row, rowIndex) => (
+                                    <tr key={rowIndex} className="border-b transition-colors hover:bg-muted/50 data-[state=selected]:bg-muted">
+                                        <td
+                                            className="align-middle p-1 border-r text-sm text-muted-foreground flex items-center justify-center h-full"
+                                            style={{ width: '64px' }}
+                                        >
+                                            {rowIndex + 1}
+                                        </td>
+                                        {localTableData.headers.map((header, headerIndex) => (
+                                            <td 
+                                                key={`${header}-${headerIndex}-${rowIndex}`} 
+                                                className="align-middle p-1 border-r"
+                                                style={{ width: header === 'Title' ? '384px' : '128px' }}
+                                            >
+                                               {header === 'Status' ? (
+                                                    <Select value={String(row[header] ?? '')} onValueChange={(newStatus) => handleStatusChange(rowIndex, header, newStatus)} disabled={isProcessing}>
+                                                        <SelectTrigger className="w-full h-8 text-xs">
+                                                            <SelectValue placeholder="Select status" />
+                                                        </SelectTrigger>
+                                                        <SelectContent>
+                                                            <SelectItem value="L1">L1</SelectItem>
+                                                            <SelectItem value="L2">L2</SelectItem>
+                                                            <SelectItem value="L3">L3</SelectItem>
+                                                            <SelectItem value="Solved">Solved</SelectItem>
+                                                        </SelectContent>
+                                                    </Select>
+                                                ) : header === 'Ticket OP' ? (
+                                                    <Input
+                                                        type="text"
+                                                        value={row[header] || ''}
+                                                        onChange={(e) => handleStatusChange(rowIndex, header, e.target.value)}
+                                                        className="w-full h-8 text-xs"
+                                                        disabled={isProcessing}
+                                                    />
+                                                ) : (header === 'Created At' || header === 'Resolved At') ? (
+                                                    <span className="truncate px-2">{formatDateTime(row[header], dateFormats[header] || 'report')}</span>
+                                                ) : (
+                                                    <span className="truncate px-2">{String(row[header] || '')}</span>
+                                                )}
+                                            </td>
+                                        ))}
+                                    </tr>
+                                ))}
+                            </tbody>
+                        </table>
+                    </div>
                 </div>
             </CardContent>
             <CardFooter className="pt-4">
@@ -998,6 +921,24 @@ function PreviewTable({
         </Card>
     );
 }
+
+
+
+
     
 
     
+
+    
+
+
+
+
+
+
+
+
+
+
+
+

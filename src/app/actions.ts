@@ -31,6 +31,7 @@ const projectFilesForAction = [
   "src/app/data-weaver/page.tsx",
   "src/app/settings/page.tsx",
   "src/app/code-viewer/page.tsx",
+  "src/app/api-qiscus/page.tsx",
 
   // Komponen Utama (logika untuk setiap halaman)
   "src/components/import-flow.tsx",
@@ -39,6 +40,7 @@ const projectFilesForAction = [
   "src/components/cek-duplikasi.tsx",
   "src/components/data-weaver.tsx",
   "src/components/layout/client-layout.tsx",
+  "src/components/api-qiscus.tsx",
 
 
   // Aksi & Logika Server
@@ -132,6 +134,50 @@ export async function getProjectFileContents() {
         return { success: false, error: "Gagal mengambil file proyek. Silakan coba lagi." };
     }
 }
+
+export async function syncQiscusToSheet(appCode: string, secretKey: string, sheetUrl: string) {
+    if (!appCode || !secretKey) {
+        return { error: 'Qiscus App Code and Secret Key are required.' };
+    }
+
+    const webhookUrl = 'https://go-rest.pintro.id/api/webhook/tickets';
+
+    try {
+        const response = await fetch(webhookUrl, {
+            method: 'GET', // Or 'POST' if the API expects that
+            headers: {
+                'Content-Type': 'application/json',
+                'QISCUS-SDK-APP-ID': appCode,
+                'QISCUS-SDK-SECRET': secretKey,
+            },
+        });
+
+        if (!response.ok) {
+            const errorText = await response.text();
+            // Try to parse as JSON, but fall back to raw text if it fails
+            let errorDetail = errorText;
+            try {
+                const errorJson = JSON.parse(errorText);
+                errorDetail = errorJson.message || JSON.stringify(errorJson);
+            } catch (e) {
+                // Not a JSON response, use the raw text
+            }
+            throw new Error(`HTTP error! status: ${response.status}, message: ${errorDetail}`);
+        }
+
+        const data = await response.json();
+
+        // ** NEXT STEP: Parse the 'data' and sync it to Google Sheets **
+        // For now, we just confirm that we can fetch it.
+        
+        return { success: true, message: 'Successfully fetched data from Qiscus API. Sync to GSheet is the next step.' };
+
+    } catch (error: any) {
+        console.error('Failed to sync data from Qiscus:', error);
+        return { error: error.message || 'An unknown error occurred during sync.' };
+    }
+}
+
 
 const getSheetData = unstable_cache(
     async (url: string) => {
@@ -305,44 +351,6 @@ async function getSheetRowMap(sheets: any, spreadsheetId: string, sheetName: str
     return rowMap;
 }
 
-const normalizeAndFormatDate = (dateStr: string): string | null => {
-    if (!dateStr || typeof dateStr !== 'string' || dateStr.trim() === '') {
-        return null;
-    }
-    const trimmed = dateStr.trim();
-
-    // Try parsing various formats into a Date object
-    let dateObj: Date | null = null;
-    try {
-        // Try ISO format first (from our app) e.g., "2024-07-31T07:38:15.123Z"
-        if (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(trimmed)) {
-            dateObj = new Date(trimmed);
-        } else {
-            // Try DD/MM/YYYY HH:mm format (from Google Sheets)
-            const gsheetMatch = trimmed.match(/(\d{1,2})\/(\d{1,2})\/(\d{4})\s+(\d{1,2}):(\d{1,2})/);
-            if (gsheetMatch) {
-                const [_, day, month, year, hour, minute] = gsheetMatch;
-                dateObj = new Date(`${year}-${month}-${day}T${hour}:${minute}:00`);
-            }
-        }
-    } catch (e) {
-        return null; // Invalid date string
-    }
-
-    if (!dateObj || isNaN(dateObj.getTime())) {
-        return null;
-    }
-
-    // Format to a consistent YYYY-MM-DD HH:mm string
-    const year = dateObj.getFullYear();
-    const month = String(dateObj.getMonth() + 1).padStart(2, '0');
-    const day = String(dateObj.getDate()).padStart(2, '0');
-    const hour = String(dateObj.getHours()).padStart(2, '0');
-    const minute = String(dateObj.getMinutes()).padStart(2, '0');
-
-    return `${year}-${month}-${day} ${hour}:${minute}`;
-};
-
 export async function getUpdatePreview(
     data: { rows: Record<string, any>[] },
     sheetUrl: string
@@ -375,7 +383,7 @@ export async function getUpdatePreview(
             const detailCase = appRow['Title'];
             const newStatus = appRow['Status'];
             const newTicketOp = appRow['Ticket OP'] || '';
-            const newCheckoutRaw = appRow['Resolved At'] || '';
+            const newCheckout = appRow['Resolved At'] || '';
 
             if (typeof detailCase === 'string') {
                 const match = detailCase.match(ticketNumberRegex);
@@ -387,10 +395,7 @@ export async function getUpdatePreview(
                         const statusChanged = sheetRowInfo.currentStatus !== newStatus;
                         // Only consider it a change if the new Ticket OP is not empty
                         const ticketOpChanged = newTicketOp && sheetRowInfo.currentTicketOp !== newTicketOp;
-                        
-                        const formattedSheetCheckout = normalizeAndFormatDate(sheetRowInfo.currentCheckout);
-                        const formattedNewCheckout = normalizeAndFormatDate(newCheckoutRaw);
-                        const checkoutChanged = newStatus === 'Solved' && formattedSheetCheckout !== formattedNewCheckout;
+                        const checkoutChanged = newStatus === 'Solved' && sheetRowInfo.currentCheckout !== newCheckout;
 
                         if (statusChanged || ticketOpChanged || checkoutChanged) {
                              changesToPreview.push({
@@ -400,7 +405,7 @@ export async function getUpdatePreview(
                                 oldTicketOp: sheetRowInfo.currentTicketOp,
                                 newTicketOp: ticketOpChanged ? newTicketOp : sheetRowInfo.currentTicketOp,
                                 oldCheckout: sheetRowInfo.currentCheckout,
-                                newCheckout: newStatus === 'Solved' ? newCheckoutRaw : sheetRowInfo.currentCheckout,
+                                newCheckout: newStatus === 'Solved' ? newCheckout : sheetRowInfo.currentCheckout,
                             });
                         }
                     }
@@ -408,10 +413,6 @@ export async function getUpdatePreview(
             }
         }
         
-        if (changesToPreview.length === 0) {
-            return { success: true, message: 'No changes detected. Everything is up-to-date.' };
-        }
-
         return { success: true, changes: changesToPreview };
 
     } catch (error: any) {
@@ -456,7 +457,7 @@ export async function updateSheetStatus(
             const detailCase = appRow['Title'];
             const newStatus = appRow['Status'];
             const newTicketOp = appRow['Ticket OP'] || '';
-            const newCheckoutRaw = appRow['Resolved At'] || '';
+            const newCheckout = appRow['Resolved At'] || '';
 
             if (typeof detailCase === 'string') {
                 const match = detailCase.match(ticketNumberRegex);
@@ -468,10 +469,8 @@ export async function updateSheetStatus(
                         const statusChanged = sheetRowInfo.currentStatus !== newStatus;
                         // Only trigger an update if the new Ticket OP from the app is not empty and different.
                         const ticketOpChanged = newTicketOp && sheetRowInfo.currentTicketOp !== newTicketOp;
-
-                        const formattedSheetCheckout = normalizeAndFormatDate(sheetRowInfo.currentCheckout);
-                        const formattedNewCheckout = normalizeAndFormatDate(newCheckoutRaw);
-                        const checkoutWillChange = newStatus === 'Solved' && formattedSheetCheckout !== formattedNewCheckout;
+                        const isSolvedNow = newStatus === 'Solved';
+                        const checkoutWillChange = isSolvedNow && sheetRowInfo.currentCheckout !== newCheckout;
                         
                         if (statusChanged || ticketOpChanged || checkoutWillChange) {
                             if (statusChanged) {
@@ -489,7 +488,7 @@ export async function updateSheetStatus(
                              if (checkoutWillChange) { // Only update checkout if it's changing
                                 updateRequests.push({
                                     range: `${sheetName}!O${sheetRowInfo.rowIndex}`,
-                                    values: [[newCheckoutRaw]],
+                                    values: [[newCheckout]],
                                 });
                             }
 
@@ -501,7 +500,7 @@ export async function updateSheetStatus(
                                 oldTicketOp: sheetRowInfo.currentTicketOp,
                                 newTicketOp: ticketOpChanged ? newTicketOp : sheetRowInfo.currentTicketOp,
                                 oldCheckout: sheetRowInfo.currentCheckout,
-                                newCheckout: newStatus === 'Solved' ? newCheckoutRaw : sheetRowInfo.currentCheckout
+                                newCheckout: isSolvedNow ? newCheckout : sheetRowInfo.currentCheckout
                             });
                         }
                     }
@@ -956,98 +955,95 @@ export async function fetchL3ReportData(sheetUrl: string) {
         return { error: 'Invalid Google Sheets URL format.' };
     }
     const spreadsheetId = match[1];
-    const sheetName = 'All Case';
 
     try {
         const sheets = getGoogleSheetsClient();
-        
-        // 1. First pass: Get only the STATUS column (G) from the second row downwards
-        const statusResponse = await sheets.spreadsheets.values.get({
+        const response = await sheets.spreadsheets.values.get({
             spreadsheetId,
-            range: `${sheetName}!G2:G`,
+            range: 'All Case!B:T', // DATE to Ticket OP
         });
 
-        const statusRows = statusResponse.data.values;
-        if (!statusRows || statusRows.length === 0) {
-            return { error: 'No data found in the status column.' };
+        const rows = response.data.values;
+        if (!rows || rows.length < 2) {
+            return { error: 'No data found in the sheet.' };
         }
 
-        const l3RowNumbers: number[] = [];
-        statusRows.forEach((row, index) => {
-            // Check if the first cell of the row is 'L3'
-            if (row[0] === 'L3') {
-                // Add 2 to the index because our range starts from G2 and indices are 0-based
-                l3RowNumbers.push(index + 2);
-            }
-        });
+        const dataRows = rows.slice(1);
 
-        if (l3RowNumbers.length === 0) {
-            return { success: true, report: `*Update cases yang belum solved L3 on hold*\n\nTotal : 0` };
-        }
-        
-        // 2. Second pass: Get the full data only for the identified L3 rows
-        const l3DataRanges = l3RowNumbers.map(rowNum => `${sheetName}!B${rowNum}:W${rowNum}`);
-        const fullDataResponse = await sheets.spreadsheets.values.batchGet({
-            spreadsheetId,
-            ranges: l3DataRanges,
-        });
+        // Hardcoded indexes based on the provided range B:T
+        const dateIndex = 0;         // DATE is in column B (index 0)
+        const statusIndex = 5;       // STATUS CASE is in column G (index 5)
+        const moduleIndex = 8;       // Modul is in column J (index 8)
+        const titleIndex = 11;       // TITLE is in column M (index 11)
+        const ticketOpIndex = 18;    // Ticket OP is in column T (index 18)
 
-        const l3Rows = fullDataResponse.data.valueRanges?.map(vr => vr.values?.[0] || []) || [];
+        const l3Cases = dataRows.filter(row => row[statusIndex] === 'L3');
 
-        const l3CasesWithDuration = l3Rows.map(row => {
+        const l3CasesWithDuration = l3Cases.map(row => {
             const today = new Date();
-            // Indexes are now relative to the range B:W (0 to 21)
-            const dateStr = row[0]; // B
-            let duration = -1;
+            const dateStr = row[dateIndex];
+            let duration = -1; // Default/error value
             if (dateStr) {
                 const parts = dateStr.split('/');
                 if (parts.length === 3) {
-                    const caseDate = new Date(`${parts[2]}-${parts[1]}-${parts[0]}`); // DD/MM/YYYY
+                    // Assuming DD/MM/YYYY
+                    const caseDate = new Date(`${parts[2]}-${parts[1]}-${parts[0]}`);
                     if (!isNaN(caseDate.getTime())) {
-                         const todayAtMidnight = new Date(today.getFullYear(), today.getMonth(), today.getDate());
-                         const caseDateAtMidnight = new Date(caseDate.getFullYear(), caseDate.getMonth(), caseDate.getDate());
-                         const diffTime = Math.abs(todayAtMidnight.getTime() - caseDateAtMidnight.getTime());
-                         duration = Math.floor(diffTime / (1000 * 60 * 60 * 24));
+                        // Set time to 00:00:00 for both dates to get clean day difference
+                        const todayAtMidnight = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+                        const caseDateAtMidnight = new Date(caseDate.getFullYear(), caseDate.getMonth(), caseDate.getDate());
+                        
+                        const diffTime = Math.abs(todayAtMidnight.getTime() - caseDateAtMidnight.getTime());
+                        duration = Math.floor(diffTime / (1000 * 60 * 60 * 24));
                     }
                 }
             }
-
-            const clientName = row[3] || '';  // E
-            const moduleValue = row[8] || ''; // J
-            const title = row[11] || '';      // M
-            const ticketOp = row[18] || '';    // T
-            const jiraUrl = row[21] || '';    // W
-
-            let category = 'Akademik';
-            if (['Payment', 'Pintro Pay'].includes(moduleValue)) category = 'Payment';
-            else if (moduleValue === 'Aplikasi/Mobile') category = 'Aplikasi/Mobile';
-            else if (moduleValue === 'Akses Portal') category = 'Akses Portal';
             
-            const fullTitle = [clientName, title, ticketOp, jiraUrl].filter(Boolean).join(' ');
+            const moduleValue = row[moduleIndex] || '';
+            let category = 'Akademik'; // Default category
+            if (moduleValue === 'Payment' || moduleValue === 'Pintro Pay') {
+                category = 'Payment';
+            } else if (moduleValue === 'Aplikasi/Mobile') {
+                category = 'Aplikasi/Mobile';
+            } else if (moduleValue === 'Akses Portal') {
+                category = 'Akses Portal';
+            }
 
-            return { category, title: fullTitle, duration, date: dateStr };
+            const title = row[titleIndex] || '';
+            const ticketOp = row[ticketOpIndex] || '';
+            const fullTitle = [title, ticketOp].filter(Boolean).join(' ');
+
+            return {
+                category: category,
+                title: fullTitle,
+                duration: duration,
+            };
         });
 
         const groupedCases: Record<string, typeof l3CasesWithDuration> = {};
         l3CasesWithDuration.forEach(caseItem => {
-            if (!groupedCases[caseItem.category]) groupedCases[caseItem.category] = [];
+            if (!groupedCases[caseItem.category]) {
+                groupedCases[caseItem.category] = [];
+            }
             groupedCases[caseItem.category].push(caseItem);
         });
 
-        const minDate = l3CasesWithDuration.reduce((min, item) => {
-            if (!item.date) return min;
-            const parts = item.date.split('/');
-            if (parts.length !== 3) return min;
-            const caseDate = new Date(`${parts[2]}-${parts[1]}-${parts[0]}`);
-            return !min || caseDate < min ? caseDate : min;
+        const minDate = l3Cases.reduce((min, row) => {
+             const dateStr = row[dateIndex];
+             if (!dateStr) return min;
+             const parts = dateStr.split('/');
+             if (parts.length !== 3) return min;
+             const caseDate = new Date(`${parts[2]}-${parts[1]}-${parts[0]}`);
+             return !min || caseDate < min ? caseDate : min;
         }, null as Date | null);
 
-        const maxDate = l3CasesWithDuration.reduce((max, item) => {
-            if (!item.date) return max;
-            const parts = item.date.split('/');
-            if (parts.length !== 3) return max;
-            const caseDate = new Date(`${parts[2]}-${parts[1]}-${parts[0]}`);
-            return !max || caseDate > max ? caseDate : max;
+        const maxDate = l3Cases.reduce((max, row) => {
+            const dateStr = row[dateIndex];
+             if (!dateStr) return max;
+             const parts = dateStr.split('/');
+             if (parts.length !== 3) return max;
+             const caseDate = new Date(`${parts[2]}-${parts[1]}-${parts[0]}`);
+             return !max || caseDate > max ? caseDate : max;
         }, null as Date | null);
 
         const formatDate = (date: Date | null) => {
@@ -1058,17 +1054,16 @@ export async function fetchL3ReportData(sheetUrl: string) {
             return `${day}/${month}/${year}`;
         }
 
-        let reportText = `*Update cases yang belum solved L3 on hold (${formatDate(minDate)} - ${formatDate(maxDate)})*\n\n`;
-        reportText += `Total : ${l3Rows.length}\n`;
+        let reportText = `Update cases yang belum solved L3 on hold (${formatDate(minDate)} - ${formatDate(maxDate)})\n\n`;
+        reportText += `Total : ${l3Cases.length}\n`;
         
         const categoryCounts = Object.entries(groupedCases).map(([category, cases]) => `${category} > L3 : ${cases.length}`).join('\n');
         reportText += `${categoryCounts}\n\n`;
 
         Object.entries(groupedCases).forEach(([category, cases]) => {
-            reportText += `*${category.toUpperCase()} > L3*\n`;
+            reportText += `${category.toUpperCase()} > L3\n`;
             cases.forEach((caseItem, index) => {
-                const durationText = caseItem.duration >= 0 ? `(${caseItem.duration} hari)` : '';
-                reportText += `${index + 1}. ${caseItem.title} ${durationText}\n`;
+                reportText += `${index + 1}. ${caseItem.title} (${caseItem.duration >= 0 ? `${caseItem.duration} hari` : 'N/A'})\n`;
             });
             reportText += '\n';
         });
@@ -1106,21 +1101,6 @@ export async function fetchL3ReportData(sheetUrl: string) {
       
 
 
-
-    
-
-    
-
-    
-
-    
-
-
-
-
-    
-
-    
 
     
 
