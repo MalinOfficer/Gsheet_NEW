@@ -5,7 +5,7 @@ import { useState, useTransition, useEffect, useContext, useCallback, useRef, Mo
 import { useRouter } from 'next/navigation';
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from "@/components/ui/card";
-import { Upload, Import, DatabaseZap, Save, CheckCircle2, XCircle, ShieldCheck, Undo, Braces, Trash2, Pencil, Copy, Check, BarChart, FileCog, RefreshCw } from 'lucide-react';
+import { Loader2, Upload, Import, DatabaseZap, Save, CheckCircle2, XCircle, ShieldCheck, Undo, Braces, Trash2, Pencil, Copy, Check, BarChart, FileCog } from 'lucide-react';
 import { getSpreadsheetTitle, importToSheet, updateSheetStatus, getUpdatePreview, undoLastAction, fetchL3ReportData } from '@/app/actions';
 import { useToast } from '@/hooks/use-toast';
 import { Label } from './ui/label';
@@ -29,7 +29,6 @@ import { AlertCircle } from 'lucide-react';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuRadioGroup, DropdownMenuRadioItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { formatDateTime, type DateFormat } from '@/lib/date-utils';
 import { cn } from '@/lib/utils';
-import { Spinner } from './ui/spinner';
 
 
 const LOCAL_STORAGE_KEY_SHEET_URL = 'gsheetDashboardSheetUrl';
@@ -799,13 +798,13 @@ export function ImportFlow() {
                               className={!isVerified ? 'bg-orange-500 hover:bg-orange-600 text-white' : ''}
                               disabled={isProcessing || !sheetUrl}
                             >
-                                {isAnalyzing ? <RefreshCw className="w-4 h-4 mr-2 animate-spin" /> : <ShieldCheck className="w-4 h-4 mr-2" />}
+                                {isAnalyzing ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <ShieldCheck className="w-4 h-4 mr-2" />}
                                 {isAnalyzing ? 'Verifying...' : 'Verify'}
                             </Button>
                         )}
                      </div>
                     <div className="mt-1 h-5">
-                      {isAnalyzing && <div className="flex items-center text-xs text-muted-foreground"><RefreshCw className="w-3 h-3 mr-1.5 animate-spin" /><span>Analyzing...</span></div>}
+                      {isAnalyzing && <div className="flex items-center text-xs text-muted-foreground"><Loader2 className="w-3 h-3 mr-1.5 animate-spin" /><span>Analyzing...</span></div>}
                       {spreadsheetTitle && <div className="flex items-center text-xs text-green-600 font-medium"><CheckCircle2 className="w-3 h-3 mr-1.5" /><span>{spreadsheetTitle}</span></div>}
                       {analysisError && <div className="flex items-center text-xs text-destructive font-medium"><XCircle className="w-3 h-3 mr-1.5" /><span>{analysisError}</span></div>}
                     </div>
@@ -815,7 +814,7 @@ export function ImportFlow() {
                     <AlertDialog>
                       <AlertDialogTrigger asChild>
                          <Button size="sm" disabled={isProcessing || !isVerified}>
-                           {isImporting ? <><RefreshCw className="mr-2 h-4 w-4 animate-spin" />Mengekspor...</> : <><Upload className="mr-2 h-4 w-4" />Export to GSheet</>}
+                           {isImporting ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Mengekspor...</> : <><Upload className="mr-2 h-4 w-4" />Export to GSheet</>}
                          </Button>
                       </AlertDialogTrigger>
                       <AlertDialogContent>
@@ -828,7 +827,7 @@ export function ImportFlow() {
                         <AlertDialogFooter>
                           <AlertDialogCancel>Batal</AlertDialogCancel>
                           <AlertDialogAction onClick={handleImport} disabled={isImporting}>
-                            {isImporting ? <><RefreshCw className="mr-2 h-4 w-4 animate-spin" />Mengekspor...</> : "Ya, Lanjutkan Ekspor"}
+                            {isImporting ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Mengekspor...</> : "Ya, Lanjutkan Ekspor"}
                           </AlertDialogAction>
                         </AlertDialogFooter>
                       </AlertDialogContent>
@@ -836,7 +835,7 @@ export function ImportFlow() {
                     
                     <AlertDialog open={isUpdateConfirmOpen} onOpenChange={setIsUpdateConfirmOpen}>
                         <Button onClick={handleUpdatePreview} size="sm" className="bg-yellow-500 hover:bg-yellow-600 text-yellow-950" disabled={isProcessing || !isVerified}>
-                            {isPreviewing ? <><RefreshCw className="mr-2 h-4 w-4 animate-spin" />Mengecek...</> : <><DatabaseZap className="mr-2 h-4 w-4" />Update Status</>}
+                            {isPreviewing ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Mengecek...</> : <><DatabaseZap className="mr-2 h-4 w-4" />Update Status</>}
                         </Button>
                       <AlertDialogContent>
                         <AlertDialogHeader>
@@ -844,7 +843,7 @@ export function ImportFlow() {
                            <div className="text-sm text-muted-foreground">
                                 {isPreviewing ? (
                                     <div className="flex items-center justify-center p-8">
-                                        <RefreshCw className="mr-2 h-6 w-6 animate-spin" />
+                                        <Loader2 className="mr-2 h-6 w-6 animate-spin" />
                                         <span>Mencari perubahan...</span>
                                     </div>
                                 ) : (
@@ -870,14 +869,14 @@ export function ImportFlow() {
                         <AlertDialogFooter>
                           <AlertDialogCancel onClick={() => setUpdatePreview([])}>Batal</AlertDialogCancel>
                           <AlertDialogAction onClick={handleConfirmUpdate} disabled={isUpdating || isPreviewing || updatePreview.length === 0}>
-                            {isUpdating ? <><RefreshCw className="mr-2 h-4 w-4 animate-spin" />Memperbarui...</> : "Ya, Lanjutkan Update"}
+                            {isUpdating ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Memperbarui...</> : "Ya, Lanjutkan Update"}
                           </AlertDialogAction>
                         </AlertDialogFooter>
                       </AlertDialogContent>
                     </AlertDialog>
 
                     <Button onClick={handleUndo} size="sm" variant="destructive" disabled={!lastActionUndoData || isProcessing || !isVerified}>
-                        {isUndoing ? <><RefreshCw className="mr-2 h-4 w-4 animate-spin" />Membatalkan...</> : <><Undo className="mr-2 h-4 w-4" />Undo Last Action</>}
+                        {isUndoing ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Membatalkan...</> : <><Undo className="mr-2 h-4 w-4" />Undo Last Action</>}
                     </Button>
                 </div>
               </CardContent>
@@ -1135,5 +1134,3 @@ function PreviewTable({
 
 
 
-
-    

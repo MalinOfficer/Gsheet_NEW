@@ -6,12 +6,11 @@ import { Button } from '@/components/ui/button';
 import { Card, CardDescription, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion';
-import { Download, Archive, RefreshCw } from 'lucide-react';
+import { Download, Archive, Loader2, RefreshCw } from 'lucide-react';
 import { getProjectFileContents } from '@/app/actions';
 import { useToast } from '@/hooks/use-toast';
 import JSZip from 'jszip';
 import { saveAs } from 'file-saver';
-import { Spinner } from '@/components/ui/spinner';
 
 type FileContent = {
   path: string;
@@ -114,7 +113,7 @@ export default function CodeViewerPage() {
                     <div className='flex gap-2'>
                         <Button onClick={handleSync} disabled={isSyncing || isZipping} className="w-full sm:w-auto">
                             {isSyncing ? (
-                              <RefreshCw className="mr-2 h-4 w-4 animate-spin" />
+                              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                             ) : (
                               <RefreshCw className="mr-2 h-4 w-4" />
                             )}
@@ -123,7 +122,7 @@ export default function CodeViewerPage() {
                          {fileContents && (
                             <Button onClick={handleDownloadAll} disabled={isZipping || isSyncing} className="w-full sm:w-auto">
                                 {isZipping ? (
-                                    <RefreshCw className="mr-2 h-4 w-4 animate-spin" />
+                                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                                 ) : (
                                     <Archive className="mr-2 h-4 w-4" />
                                 )}
@@ -135,7 +134,7 @@ export default function CodeViewerPage() {
                 
                 {isSyncing && (
                     <div className="flex items-center justify-center p-12">
-                        <RefreshCw className="h-8 w-8 animate-spin text-primary" />
+                        <Loader2 className="h-8 w-8 animate-spin text-primary" />
                     </div>
                 )}
                 

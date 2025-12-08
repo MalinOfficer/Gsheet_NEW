@@ -1,10 +1,11 @@
+
 "use client";
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetClose, SheetTrigger } from "@/components/ui/sheet";
 import { Button } from "@/components/ui/button";
-import { Menu, BarChart, GanttChartSquare, Settings, ListTree, GitBranch, Files, Combine, CodeXml, FileCog, PackageSearch, RefreshCw } from "lucide-react";
+import { Menu, BarChart, GanttChartSquare, Settings, Loader2, ListTree, GitBranch, Files, Combine, CodeXml, FileCog, PackageSearch } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useContext, useEffect, useState } from "react";
 import { TableDataContext } from "@/store/table-data-context";
@@ -19,8 +20,6 @@ import {
   navigationMenuTriggerStyle,
 } from "@/components/ui/navigation-menu";
 import React from "react";
-import { ThemeSwitch } from "@/components/ui/theme-switch";
-import { Spinner } from "@/components/ui/spinner";
 
 
 const primaryNavItems = [
@@ -130,7 +129,7 @@ function ProcessingIndicator() {
 
     return (
         <div className="flex items-center gap-3 rounded-lg px-3 py-2 text-primary">
-            <Spinner className="w-5 h-5" style={{width: '20px', height: '20px'}}/>
+            <Loader2 className="h-4 w-4 animate-spin" />
             <span className="text-sm font-medium">Processing...</span>
         </div>
     );
@@ -215,11 +214,10 @@ export function ClientLayout({ children }: { children: React.ReactNode }) {
                 </div>
 
                 {/* Right side of header */}
-                <div className="flex items-center gap-4">
+                <div className="flex items-center gap-2">
                     <div className="hidden md:block">
                         <ProcessingIndicator />
                     </div>
-                    <ThemeSwitch />
                      <Link
                         href="/settings"
                         className={cn(
@@ -266,4 +264,3 @@ const ListItem = React.forwardRef<
   );
 });
 ListItem.displayName = "ListItem"
-    

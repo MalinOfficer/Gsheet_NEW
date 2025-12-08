@@ -4,7 +4,7 @@
 import React, { createContext, useState, useEffect, useCallback } from 'react';
 
 const LOCAL_STORAGE_KEY_THEME = 'app-theme';
-type Theme = 'dark' | 'light' | 'system';
+type Theme = 'dark' | 'light' | 'system' | 'default';
 
 export type ThemeProviderState = {
   theme: Theme;
@@ -12,7 +12,7 @@ export type ThemeProviderState = {
 };
 
 const initialState: ThemeProviderState = {
-  theme: 'system',
+  theme: 'default',
   setTheme: () => null,
 };
 
@@ -20,7 +20,7 @@ export const ThemeProviderContext = createContext<ThemeProviderState>(initialSta
 
 export function ThemeProvider({
   children,
-  defaultTheme = 'dark',
+  defaultTheme = 'default',
   storageKey = LOCAL_STORAGE_KEY_THEME,
   ...props
 }: {
@@ -36,39 +36,29 @@ export function ThemeProvider({
   });
 
   const handleSetTheme = useCallback((newTheme: Theme) => {
-    const root = window.document.documentElement;
-    
-    root.classList.remove('light', 'dark');
-
-    if (newTheme === 'system') {
-        const systemTheme = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
-        root.classList.add(systemTheme);
-    } else {
-        root.classList.add(newTheme);
-    }
-    
     localStorage.setItem(storageKey, newTheme);
-    setTheme(newTheme);
 
+    const root = window.document.documentElement;
+    root.classList.remove('default', 'dark');
+    root.classList.add(newTheme);
+
+    setTheme(newTheme);
   }, [storageKey]);
 
-  // Apply theme on initial load and when theme state changes
+  // This effect ensures that if the theme is changed in another tab,
+  // this tab will update its state.
   useEffect(() => {
-    handleSetTheme(theme);
-  }, [theme, handleSetTheme]);
-
-  // Listen for system theme changes
-  useEffect(() => {
-    const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
-    const handleChange = () => {
-      // If the current theme is 'system', re-apply it to reflect the change.
-      if (theme === 'system') {
-        handleSetTheme('system');
+    const handleStorageChange = (event: StorageEvent) => {
+      if (event.key === storageKey) {
+        const newTheme = (event.newValue as Theme) || defaultTheme;
+        handleSetTheme(newTheme);
       }
     };
-    mediaQuery.addEventListener('change', handleChange);
-    return () => mediaQuery.removeEventListener('change', handleChange);
-  }, [theme, handleSetTheme]);
+    window.addEventListener('storage', handleStorageChange);
+    return () => {
+      window.removeEventListener('storage', handleStorageChange);
+    };
+  }, [storageKey, defaultTheme, handleSetTheme]);
 
   const value = {
     theme,
