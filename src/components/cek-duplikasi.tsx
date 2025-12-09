@@ -5,7 +5,7 @@
 import { useState, useCallback, useTransition, useMemo, useRef, DragEvent } from 'react';
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from "@/components/ui/card";
-import { Upload, Loader2, CheckCircle2, AlertTriangle, Trash2, Search, FileWarning, Copy, Check, Cake, XCircle, FileText, X } from 'lucide-react';
+import { Upload, Loader2, CheckCircle2, AlertTriangle, Trash2, Search, FileWarning, Copy, Check, Cake, XCircle, FileText, X, RefreshCw } from 'lucide-react';
 import { useToast } from "@/hooks/use-toast";
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
@@ -551,7 +551,7 @@ export function CekDuplikasi() {
                     </CardContent>
                     <CardFooter>
                         <Button onClick={handleCheckDuplicates} disabled={isChecking || filesData.length === 0} className="w-full sm:w-auto">
-                            {isChecking ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Search className="mr-2 h-4 w-4" />}
+                            {isChecking ? <RefreshCw className="mr-2 h-4 w-4 animate-spin" /> : <Search className="mr-2 h-4 w-4" />}
                             {isChecking ? 'Checking...' : 'Check Files'}
                         </Button>
                     </CardFooter>
@@ -675,3 +675,6 @@ function ResultTable({ title, icon: Icon, count, data, type }: { title: string, 
 
     
 
+
+
+    

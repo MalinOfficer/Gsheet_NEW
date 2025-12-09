@@ -5,7 +5,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetClose, SheetTrigger } from "@/components/ui/sheet";
 import { Button } from "@/components/ui/button";
-import { Menu, BarChart, GanttChartSquare, Settings, Loader2, ListTree, GitBranch, Files, Combine, CodeXml, FileCog, PackageSearch } from "lucide-react";
+import { Menu, BarChart, GanttChartSquare, Settings, ListTree, GitBranch, Files, Combine, CodeXml, FileCog, PackageSearch, RefreshCw } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useContext, useEffect, useState } from "react";
 import { TableDataContext } from "@/store/table-data-context";
@@ -129,7 +129,7 @@ function ProcessingIndicator() {
 
     return (
         <div className="flex items-center gap-3 rounded-lg px-3 py-2 text-primary">
-            <Loader2 className="h-4 w-4 animate-spin" />
+            <RefreshCw className="h-4 w-4 animate-spin" />
             <span className="text-sm font-medium">Processing...</span>
         </div>
     );
@@ -137,10 +137,9 @@ function ProcessingIndicator() {
 
 
 export function ClientLayout({ children }: { children: React.ReactNode }) {
-    const { isProcessing, setIsProcessing } = useContext(TableDataContext);
+    const { setIsProcessing } = useContext(TableDataContext);
     const pathname = usePathname();
     const [isClient, setIsClient] = useState(false);
-    const isMobile = useIsMobile();
 
     useEffect(() => {
         setIsClient(true);
@@ -159,7 +158,7 @@ export function ClientLayout({ children }: { children: React.ReactNode }) {
     }
     
     return (
-        <div className={cn("grid h-screen w-full grid-rows-[auto_1fr]", isProcessing && "pointer-events-none")}>
+        <div className={cn("grid h-screen w-full grid-rows-[auto_1fr]")}>
              <header className="sticky top-0 z-40 flex h-16 items-center justify-between gap-4 border-b bg-card px-4 md:px-6">
                 <div className="flex items-center gap-4">
                     {/* Hamburger Menu for Mobile */}
@@ -264,3 +263,5 @@ const ListItem = React.forwardRef<
   );
 });
 ListItem.displayName = "ListItem"
+    
+    
