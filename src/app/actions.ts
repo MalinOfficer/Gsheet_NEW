@@ -10,16 +10,13 @@ import path from 'path';
 const projectFilesForAction = [
   // File konfigurasi root
   "README.md",
-  "next.config.ts",
+  "next.config.js",
   "package.json",
   "postcss.config.js",
   "tailwind.config.ts",
   "tsconfig.json",
   "components.json",
   "next-env.d.ts",
-
-  // Folder Public
-  "public/placeholder.txt",
 
   // Struktur Aplikasi & Halaman Utama
   "src/app/layout.tsx",
@@ -31,6 +28,7 @@ const projectFilesForAction = [
   "src/app/data-weaver/page.tsx",
   "src/app/settings/page.tsx",
   "src/app/code-viewer/page.tsx",
+  "src/app/migrasi-produk/page.tsx",
 
   // Komponen Utama (logika untuk setiap halaman)
   "src/components/import-flow.tsx",
@@ -39,6 +37,7 @@ const projectFilesForAction = [
   "src/components/cek-duplikasi.tsx",
   "src/components/data-weaver.tsx",
   "src/components/layout/client-layout.tsx",
+  "src/components/migrasi-produk.tsx",
 
 
   // Aksi & Logika Server
@@ -92,6 +91,7 @@ const projectFilesForAction = [
   "src/components/ui/sheet.tsx",
   "src/components/ui/skeleton.tsx",
   "src/components/ui/slider.tsx",
+  "src/components/ui/spinner.tsx",
   "src/components/ui/switch.tsx",
   "src/components/ui/table.tsx",
   "src/components/ui/tabs.tsx",
@@ -99,6 +99,8 @@ const projectFilesForAction = [
   "src/components/ui/toast.tsx",
   "src/components/ui/toaster.tsx",
   "src/components/ui/tooltip.tsx",
+  "src/components/ui/theme-switch.css",
+  "src/components/ui/theme-switch.tsx",
 ];
 
 
@@ -1007,7 +1009,7 @@ export async function fetchL3ReportData(sheetUrl: string) {
                     const caseDate = new Date(`${parts[2]}-${parts[1]}-${parts[0]}`); // DD/MM/YYYY
                     if (!isNaN(caseDate.getTime())) {
                          const todayAtMidnight = new Date(today.getFullYear(), today.getMonth(), today.getDate());
-                         const caseDateAtMidnight = new Date(caseDate.getFullYear(), caseDate.getMonth(), caseDate.getDate());
+                         const caseDateAtMidnight = new Date(caseDate.getFullYear(), caseDate.getMonth(), today.getDate());
                          const diffTime = Math.abs(todayAtMidnight.getTime() - caseDateAtMidnight.getTime());
                          duration = Math.floor(diffTime / (1000 * 60 * 60 * 24));
                     }

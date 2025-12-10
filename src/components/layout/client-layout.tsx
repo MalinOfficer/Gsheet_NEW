@@ -20,6 +20,8 @@ import {
   navigationMenuTriggerStyle,
 } from "@/components/ui/navigation-menu";
 import React from "react";
+import { ThemeSwitch } from "../ui/theme-switch";
+import { Spinner } from "../ui/spinner";
 
 
 const primaryNavItems = [
@@ -129,7 +131,7 @@ function ProcessingIndicator() {
 
     return (
         <div className="flex items-center gap-3 rounded-lg px-3 py-2 text-primary">
-            <RefreshCw className="h-4 w-4 animate-spin" />
+            <Spinner className="w-5 h-5" style={{width: '20px', height: '20px'}}/>
             <span className="text-sm font-medium">Processing...</span>
         </div>
     );
@@ -137,9 +139,10 @@ function ProcessingIndicator() {
 
 
 export function ClientLayout({ children }: { children: React.ReactNode }) {
-    const { setIsProcessing } = useContext(TableDataContext);
+    const { isProcessing, setIsProcessing } = useContext(TableDataContext);
     const pathname = usePathname();
     const [isClient, setIsClient] = useState(false);
+    const isMobile = useIsMobile();
 
     useEffect(() => {
         setIsClient(true);
@@ -158,7 +161,7 @@ export function ClientLayout({ children }: { children: React.ReactNode }) {
     }
     
     return (
-        <div className={cn("grid h-screen w-full grid-rows-[auto_1fr]")}>
+        <div className={cn("grid h-screen w-full grid-rows-[auto_1fr]", isProcessing && "pointer-events-none")}>
              <header className="sticky top-0 z-40 flex h-16 items-center justify-between gap-4 border-b bg-card px-4 md:px-6">
                 <div className="flex items-center gap-4">
                     {/* Hamburger Menu for Mobile */}
@@ -213,10 +216,11 @@ export function ClientLayout({ children }: { children: React.ReactNode }) {
                 </div>
 
                 {/* Right side of header */}
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-4">
                     <div className="hidden md:block">
                         <ProcessingIndicator />
                     </div>
+                    <ThemeSwitch />
                      <Link
                         href="/settings"
                         className={cn(
@@ -263,5 +267,4 @@ const ListItem = React.forwardRef<
   );
 });
 ListItem.displayName = "ListItem"
-    
     

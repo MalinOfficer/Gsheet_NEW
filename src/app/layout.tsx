@@ -12,12 +12,13 @@ export const metadata: Metadata = {
   description: "Ubah Google Sheets Anda menjadi dasbor interaktif secara instan dan gunakan alat praktis lainnya.",
 };
 
-const ANTI_FLICKER_SCRIPT = `
+const antiFlickerScript = `
 (function() {
   try {
-    const theme = localStorage.getItem('app-theme') || 'dark';
-    const root = document.documentElement;
-    root.classList.add(theme);
+    const theme = localStorage.getItem('app-theme');
+    if (theme === 'dark' || (!theme && window.matchMedia('(prefers-color-scheme: dark)').matches)) {
+      document.documentElement.classList.add('dark');
+    }
   } catch (e) {}
 })();
 `;
@@ -30,11 +31,11 @@ export default function RootLayout({
   return (
     <html lang="en" suppressHydrationWarning>
       <head>
-        <script dangerouslySetInnerHTML={{ __html: ANTI_FLICKER_SCRIPT }} />
         <link rel="icon" href="/favicon.ico" sizes="any" />
         <link rel="preconnect" href="https://fonts.googleapis.com" />
         <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
         <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
+        <script dangerouslySetInnerHTML={{ __html: antiFlickerScript }} />
       </head>
       <body className="font-body antialiased overflow-hidden" suppressHydrationWarning>
         <ThemeProvider

@@ -11,6 +11,7 @@ import { getProjectFileContents } from '@/app/actions';
 import { useToast } from '@/hooks/use-toast';
 import JSZip from 'jszip';
 import { saveAs } from 'file-saver';
+import { Spinner } from '@/components/ui/spinner';
 
 type FileContent = {
   path: string;
