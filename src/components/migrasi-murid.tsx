@@ -47,6 +47,7 @@ const createEmptyRow = (): MuridData => tableHeaders.reduce((acc, header) => ({ 
 const INITIAL_ROWS = 23;
 
 const monthMap: { [key: string]: string } = {
+    // Indonesian
     'januari': '01', 'janu': '01', 'jan': '01',
     'februari': '02', 'feb': '02', 'febr': '02',
     'maret': '03', 'mar': '03',
@@ -56,9 +57,19 @@ const monthMap: { [key: string]: string } = {
     'juli': '07', 'jul': '07',
     'agustus': '08', 'agu': '08', 'ags': '08',
     'september': '09', 'sep': '09', 'sept': '09',
-    'oktober': '10', 'okt': '10', 'oct': '10',
+    'oktober': '10', 'okt': '10',
     'november': '11', 'nov': '11',
     'desember': '12', 'des': '12',
+    // English
+    'january': '01',
+    'february': '02',
+    'march': '03',
+    'may': '05',
+    'june': '06',
+    'july': '07',
+    'august': '08', 'aug': '08',
+    'october': '10', 'oct': '10',
+    'december': '12', 'dec': '12'
 };
 
 const parseAndFormatDate = (dateStr: string): string | null => {
@@ -90,7 +101,7 @@ const parseAndFormatDate = (dateStr: string): string | null => {
         return `${day}/${month}/${year}`;
     }
 
-    // Try parsing DD NamaBulan YYYY (e.g., 21 januari 2000)
+    // Try parsing DD NamaBulan YYYY (e.g., 21 januari 2000 or 12 dec 2025)
     const dayFirstMatch = trimmedDate.match(/^(\d{1,2})\s+([a-zA-Z]+)\s+(\d{4})$/);
     if (dayFirstMatch) {
         const day = dayFirstMatch[1].padStart(2, '0');
@@ -141,7 +152,7 @@ const parseAndFormatDate = (dateStr: string): string | null => {
         return `${day}/${month}/${year}`;
     }
 
-    // Try parsing MonthName DD YYYY (e.g., januari 21 2000)
+    // Try parsing MonthName DD YYYY (e.g., januari 21 2000 or may 13 2023)
     const monthFirstMatch = trimmedDate.match(/^([a-zA-Z]+)\s(\d{1,2})\s(\d{4})$/);
     if (monthFirstMatch) {
         const monthName = monthFirstMatch[1];
@@ -338,14 +349,79 @@ export function MigrasiMurid() {
     const handleKeyDown = (e: KeyboardEvent<HTMLInputElement>, { row, col }: CellSelection) => {
         const move = (dRow: number, dCol: number) => {
             e.preventDefault();
-            const nextRow = Math.max(0, Math.min(rows.length - 1, row + dRow));
-            const nextCol = Math.max(1, Math.min(tableHeaders.length - 1, col + dCol)); // skip "No" column
-            const nextCell = document.querySelector(`[data-row='${nextRow}'][data-col='${nextCol}']`) as HTMLInputElement;
-            if (nextCell) {
-                nextCell.focus();
-                setSelectedRange({ start: { row: nextRow, col: nextCol }, end: { row: nextRow, col: nextCol } });
+            const endCell = selectedRange.end || selectedRange.start;
+            if (!endCell) return;
+    
+            const nextRow = Math.max(0, Math.min(rows.length - 1, (e.shiftKey ? endCell.row : row) + dRow));
+            const nextCol = Math.max(1, Math.min(tableHeaders.length - 1, (e.shiftKey ? endCell.col : col) + dCol));
+            
+            const nextCellEl = document.querySelector(`[data-row='${nextRow}'][data-col='${nextCol}']`) as HTMLInputElement;
+            
+            if (e.shiftKey) {
+                setSelectedRange(prev => ({...prev, end: { row: nextRow, col: nextCol }}));
+            } else {
+                 if (nextCellEl) nextCellEl.focus();
+                 setSelectedRange({ start: { row: nextRow, col: nextCol }, end: { row: nextRow, col: nextCol } });
             }
         };
+
+        const extendSelection = (direction: 'up' | 'down' | 'left' | 'right') => {
+            e.preventDefault();
+            const startCell = selectedRange.start;
+            let endCell = selectedRange.end || startCell;
+            if (!startCell || !endCell) return;
+
+            let isAtEdgeOfData = false;
+            if (direction === 'down' && endCell.row < rows.length - 1) {
+                 isAtEdgeOfData = String(rows[endCell.row][tableHeaders[endCell.col]] || '').trim() !== '' && String(rows[endCell.row + 1][tableHeaders[endCell.col]] || '').trim() === '';
+            } else if (direction === 'up' && endCell.row > 0) {
+                 isAtEdgeOfData = String(rows[endCell.row][tableHeaders[endCell.col]] || '').trim() !== '' && String(rows[endCell.row - 1][tableHeaders[endCell.col]] || '').trim() === '';
+            } else if (direction === 'right' && endCell.col < tableHeaders.length - 1) {
+                 isAtEdgeOfData = String(rows[endCell.row][tableHeaders[endCell.col]] || '').trim() !== '' && String(rows[endCell.row][tableHeaders[endCell.col+1]] || '').trim() === '';
+            } else if (direction === 'left' && endCell.col > 1) {
+                isAtEdgeOfData = String(rows[endCell.row][tableHeaders[endCell.col]] || '').trim() !== '' && String(rows[endCell.row][tableHeaders[endCell.col-1]] || '').trim() === '';
+            }
+
+            const currentPosIsEmpty = String(rows[endCell.row][tableHeaders[endCell.col]] || '').trim() === '';
+            
+            if (currentPosIsEmpty || isAtEdgeOfData) {
+                 switch (direction) {
+                    case 'down': endCell = {...endCell, row: rows.length - 1}; break;
+                    case 'up': endCell = {...endCell, row: 0}; break;
+                    case 'right': endCell = {...endCell, col: tableHeaders.length - 1}; break;
+                    case 'left': endCell = {...endCell, col: 1}; break;
+                }
+            } else {
+                switch (direction) {
+                    case 'down':
+                        for (let r = endCell.row + 1; r < rows.length; r++) {
+                            if (String(rows[r][tableHeaders[endCell.col]] || '').trim() === '') break;
+                            endCell = {...endCell, row: r};
+                        }
+                        break;
+                    case 'up':
+                        for (let r = endCell.row - 1; r >= 0; r--) {
+                            if (String(rows[r][tableHeaders[endCell.col]] || '').trim() === '') break;
+                            endCell = {...endCell, row: r};
+                        }
+                        break;
+                    case 'right':
+                        for (let c = endCell.col + 1; c < tableHeaders.length; c++) {
+                            if (String(rows[endCell.row][tableHeaders[c]] || '').trim() === '') break;
+                            endCell = {...endCell, col: c};
+                        }
+                        break;
+                    case 'left':
+                        for (let c = endCell.col - 1; c >= 1; c--) {
+                            if (String(rows[endCell.row][tableHeaders[c]] || '').trim() === '') break;
+                            endCell = {...endCell, col: c};
+                        }
+                        break;
+                }
+            }
+            setSelectedRange(prev => ({ ...prev, end: endCell }));
+        }
+
 
         if ((e.ctrlKey || e.metaKey) && e.key === 'c') {
             e.preventDefault();
@@ -359,9 +435,19 @@ export function MigrasiMurid() {
             return;
         }
 
-        if ((e.ctrlKey || e.metaKey) && (e.key === 'y' || (e.key === 'Z' && e.shiftKey))) {
+        if ((e.ctrlKey || e.metaKey) && (e.key === 'y' || (e.shiftKey && e.key === 'Z'))) {
             e.preventDefault();
             handleRedo();
+            return;
+        }
+
+        if ((e.ctrlKey || e.metaKey) && e.shiftKey) {
+            switch (e.key) {
+                case "ArrowUp": extendSelection('up'); break;
+                case "ArrowDown": extendSelection('down'); break;
+                case "ArrowLeft": extendSelection('left'); break;
+                case "ArrowRight": extendSelection('right'); break;
+            }
             return;
         }
 
@@ -724,12 +810,18 @@ export function MigrasiMurid() {
                         position: 'relative',
                     }}
                 >
-                    <div className="sticky top-0 z-20 flex bg-secondary" style={{height: '36px'}}>
+                    <div className="sticky top-0 z-30 flex bg-secondary" style={{height: '36px'}}>
                         {tableHeaders.map((header) => (
                             <div
                                 key={header}
-                                style={{ width: columnWidths[header] }}
-                                className="relative select-none border-r border-b px-2 py-2 flex items-center justify-center font-semibold text-xs text-foreground"
+                                style={{ 
+                                    width: columnWidths[header],
+                                    left: header === "No" ? 0 : 'auto',
+                                }}
+                                className={cn(
+                                    "relative select-none border-r border-b px-2 py-2 flex items-center justify-center font-semibold text-xs text-foreground",
+                                    header === "No" && "sticky z-40 bg-secondary"
+                                )}
                             >
                                 <span className="truncate">{header}</span>
                                 {header === "Tanggal Lahir" && (
@@ -787,8 +879,14 @@ export function MigrasiMurid() {
                                         return (
                                             <div
                                                 key={`${virtualRow.index}-${colIndex}`}
-                                                style={{ width: columnWidths[header] }}
-                                                className={cn("p-0 m-0 border-r border-b relative flex items-center")}
+                                                style={{ 
+                                                    width: columnWidths[header],
+                                                    left: header === "No" ? 0 : 'auto',
+                                                }}
+                                                className={cn(
+                                                    "p-0 m-0 border-r border-b relative flex items-center",
+                                                    header === "No" && "sticky z-20 bg-background"
+                                                )}
                                             >
                                                 <Input
                                                     type="text"
@@ -802,8 +900,8 @@ export function MigrasiMurid() {
                                                     data-col={colIndex}
                                                     suppressHydrationWarning
                                                     className={cn(
-                                                        "w-full h-7 text-xs px-1 rounded-none border-0 bg-transparent focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-primary z-10 relative",
-                                                        header === "No" && "text-center cursor-default bg-muted/30 focus-visible:ring-0",
+                                                        "w-full h-7 text-xs px-1 rounded-none border-0 focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-primary z-10 relative",
+                                                        header === "No" ? "bg-muted/30 cursor-default focus-visible:ring-0 text-center" : "bg-transparent",
                                                         isSelected && "bg-blue-100/50 dark:bg-blue-900/50",
                                                         isFillPreviewing && "bg-green-200/50 dark:bg-green-900/50"
                                                     )}
@@ -847,4 +945,3 @@ export function MigrasiMurid() {
         </div>
     );
 }
-
