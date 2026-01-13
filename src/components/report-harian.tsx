@@ -67,15 +67,23 @@ function DailyReportCard() {
           let maxCount = 0;
           let mostFrequent = 'N/A';
           const filteredData = data.filter(row => row[field]);
+
           if (filteredData.length === 0) return 'N/A';
+          
           filteredData.forEach(row => {
             const value = row[field];
             frequency[value] = (frequency[value] || 0) + 1;
           });
+          
           Object.entries(frequency).forEach(([value, count]) => {
               if (count > maxCount) {
                   maxCount = count;
                   mostFrequent = value;
+              } else if (count === maxCount) {
+                  // If counts are equal, choose the one that comes last alphabetically.
+                  if (value > mostFrequent) {
+                      mostFrequent = value;
+                  }
               }
           });
           return mostFrequent;
